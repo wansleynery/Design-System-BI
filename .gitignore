@@ -1,5 +1,6 @@
 # Dependências
 /node_modules
+/package-lock.json
 
 # Saída do `npm run zip` (o bi.zip é gerado, não versionado)
 /build

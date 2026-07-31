@@ -442,9 +442,13 @@ caçar:
   ligado, trocar isso obriga a remover o import de todos os arquivos de uma vez; ficou como
   está por isso.
 - **Todas as dependências estão em `devDependencies`** (incluindo `react`, `react-dom` e
-  `typescript`), e os pacotes `@sankhyalabs/*` estão fixados em `latest` — instalações não
-  são reprodutíveis. O `package-lock.json` versionado é a única âncora; prefira `npm ci` se
-  quiser repetir um build.
+  `typescript`), e os pacotes `@sankhyalabs/*` estão fixados em `latest`. **Instalações não
+  são reprodutíveis**: dois `npm install` em datas diferentes trazem versões diferentes dos
+  blocos, e o `package-lock.json` não é versionado aqui — ele descreveria as versões da
+  máquina de quem publicou, não as suas. Se o seu projeto precisa de builds repetíveis, versione
+  o lock **no seu** repositório (tire a linha do `.gitignore`) e use `npm ci`. Como o `latest`
+  acompanha o que a Sankhya publica, atualizar de propósito costuma ser o que se quer — o
+  preço é que uma regressão nos blocos chega sem aviso.
 - **`react-i18next` foi removido** porque quebrava o `npm install` com `ERESOLVE`:
   `react-i18next@11` pede `i18next >= 19`, o npm resolvia `i18next@26`, que exige
   `typescript ^5 || ^6 || ^7` enquanto aqui o TypeScript está em `^4.7.4` (o
