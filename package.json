@@ -1,0 +1,49 @@
+{
+  "name": "sankhya-bi-react-template",
+  "version": "1.0.0",
+  "description": "Template para criar telas do Sankhya com o layout novo (React + componentes ez-*/snk-*) e implantar como Componente BI num único index.jsp auto-contido.",
+  "author": "Wansley Nery Soto",
+  "license": "SEE LICENSE IN README.md",
+  "private": true,
+  "homepage": ".",
+  "scripts": {
+    "start": "react-scripts start",
+    "test": "react-scripts test --passWithNoTests",
+    "zip": "node scripts/zip.js",
+    "zip:split": "node scripts/zip.js --split",
+    "build": "npm run build.prod && gulp",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "@sankhyalabs/core": "latest",
+    "@sankhyalabs/ez-design": "latest",
+    "@sankhyalabs/ezui": "latest",
+    "@sankhyalabs/sankhyablocks": "latest",
+    "@sankhyalabs/sankhya-docusaurus-styles": "latest",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "typescript": "^4.7.4",
+    "@types/node": "^16.11.35",
+    "@types/react": "^18.0.9",
+    "@types/react-dom": "^18.0.4"
+  }
+}

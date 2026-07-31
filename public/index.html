@@ -1,0 +1,461 @@
+<!--@JSP_DIRETIVAS@-->
+<!--
+  Esta e a tela. O scripts/zip.js a transforma em build/index.jsp, embutindo o bundle.
+
+  Por que .html e nao .jsp: o react-scripts EXIGE public/index.html (build.js:50 aborta sem
+  ele), entao manter os dois seria duplicacao.
+
+  ATENCAO: nao escreva scriptlets de JSP neste arquivo, nem dentro de comentarios. O
+  HtmlWebpackPlugin passa tudo pelo lodash/template, que avalia a abertura de scriptlet como
+  JavaScript e quebra o build — inclusive quando ela aparece so em prosa. Por isso as
+  diretivas e o acesso a sessao viram marcadores, preenchidos por scripts/zip.js.
+
+  A interpolacao da pasta base, essa sim, pode ficar literal no corpo da pagina: o loader do
+  HtmlWebpackPlugin passa um `interpolate` proprio, e o lodash so ativa o modo ES-template
+  quando esse regex e o default por referencia. Verificado. (Nao escrita aqui de proposito:
+  o container tambem a resolveria dentro deste comentario, vazando o caminho no HTML.)
+
+  Marcadores preenchidos por scripts/zip.js, um de cada, procure por "@" abaixo:
+    JSP_DIRETIVAS  as tres diretivas de pagina (tem que ser a primeira linha do arquivo)
+    JSP_USUARIO    a expressao que le o usuario logado da sessao
+    BI_STYLE       tema ez-design + main.css, com as fontes woff2 em base64
+    BI_SCRIPT      os 143 arquivos de JS concatenados
+
+  Nao cite os marcadores por extenso aqui: a substituicao exige exatamente uma ocorrencia de
+  cada, e uma citacao a mais faz o bundle ser embutido duas vezes.
+
+  No `npm start` os marcadores ficam como estao e os scripts /mge/ dao 404. A tela monta
+  assim mesmo: o removerFrame nao acha DashWindow fora de um gadget e retorna calado.
+-->
+
+<html lang="pt-BR">
+
+<head>
+
+    <title></title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content= "width=device-width, initial-scale=1.0" />
+
+    <!-- **                                                                                                    -->
+    <!-- ** SEM ANGULARJS.                                                                                     -->
+    <!-- **                                                                                                    -->
+    <!-- ** A tela e 100% React + web components ez- e snk-. Nada do que ela precisa depende do AngularJS:     -->
+    <!-- ** o caminho vem da pasta interpolada, a sessao vem do JSP e os dados vem do BFF, pelo sankhyablocks. -->
+    <!-- ** Por isso saem daqui angular*.js, angular-material, snk.js, launcher.js, ui-grid, ui-bootstrap,     -->
+    <!-- ** jqwidgets, tinymce, ace, bpmn, fullcalendar e os CSS que os acompanham — sao ~30 requests que so   -->
+    <!-- ** existiriam para alimentar diretivas que esta tela nao usa, e o bootstrap.min.css/snk.min.css ainda -->
+    <!-- ** brigariam com os tokens do ez-design.                                                              -->
+    <!-- **                                                                                                    -->
+    <!-- ** ag-grid-enterprise.js tambem sai: o ez-grid traz a propria copia do AG Grid dentro do bundle.      -->
+    <!-- **                                                                                                    -->
+
+    <!-- Estilizacao base -->
+        <style>
+            html, body {
+                height: 100%;
+                margin: 0;
+                overflow: hidden;
+            }
+
+            #root {
+                height: 100%;
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+
+                /* Valor literal, e nao var(--space--large): o tema ez-design so e embutido  */
+                /* no build, entao o editor marcaria o token como nao resolvido aqui. O tema */
+                /* define --space--large como 24px, logo o resultado e o mesmo.              */
+                padding: 24px;
+                box-sizing: border-box;
+            }
+
+            /* **                                                                             */
+            /* ** CADEIA DE ALTURA                                                            */
+            /* **                                                                             */
+            /* ** snk-application e snk-crud declaram :host { display:flex; height:100% },    */
+            /* ** mas o snk-data-unit NAO tem CSS proprio — vira display:inline e quebra a    */
+            /* ** cadeia no meio: o height:100% do snk-crud passa a resolver contra uma caixa */
+            /* ** de altura automatica e a grade encolhe para o conteudo, deixando o resto do */
+            /* ** painel vazio.                                                               */
+            /* **                                                                             */
+            snk-application,
+            snk-data-unit {
+                display: flex;
+                flex-direction: column;
+                flex: 1 1 auto;
+
+                /* Sem isto um filho que transborda impede o flex de encolher o container. */
+                min-height: 0;
+            }
+
+            /* **                                                                             */
+            /* ** BOTOES DE TOPO COLADOS NA GRADE                                             */
+            /* **                                                                             */
+            /* ** O .snk-grid__header e uma linha flex (justify-content: flex-end) sem altura  */
+            /* ** nem margem proprias — a altura dele e a do maior filho, e os botoes, de 32px */
+            /* ** e altura fixa, ficam encostados no topo dessa caixa.                         */
+            /* **                                                                             */
+            /* ** Na tela nativa esse header mede 49.33px porque la existem outros dois        */
+            /* ** filhos: a snk-filter-bar, cuja linha de chips tem 37px (o <hr> so estica ate */
+            /* ** ela, ja que .ez-divider-vertical e height: auto), e o proprio <hr>, que leva */
+            /* ** margin-bottom: var(--space--medium) — 37 + 12, com o resto em subpixel. Sao  */
+            /* ** esses 12px que afastam o card da grade, e os 17px que sobram abaixo dos      */
+            /* ** botoes vem da linha de chips ser mais alta que eles.                         */
+            /* **                                                                             */
+            /* ** O snk-grid so renderiza a filter-bar (e com ela o hr) quando a config de     */
+            /* ** filtro nao vem vazia — snk-grid.js, _showSnkFilterBar. Sem barra, o header   */
+            /* ** encolhe para os 32px dos botoes e eles encostam na grade.                    */
+            /* **                                                                             */
+            /* ** Reservar a mesma altura reproduz a caixa nativa e nao soma nada quando a     */
+            /* ** barra voltar: com ela o header ja passa desse minimo por conta propria.      */
+            /* **                                                                             */
+            .snk-grid__header {
+                /* 37px da linha de chips + 12px (--space--medium) da margem do divisor. */
+                min-height: 49px;
+            }
+
+            /* **                                                                             */
+            /* ** MOLDURA UNICA: SO O PADDING DO #root                                        */
+            /* **                                                                             */
+            /* ** O snk-crud escreve ez-padding--medium (12px) no stack-item da grade e o     */
+            /* ** snk-grid escreve ez-padding--large (24px) no .snk-grid__container — as duas */
+            /* ** direto no render() (snk-crud.js:363, snk-grid.js:592), sem prop para        */
+            /* ** desligar. Somadas ao #root davam tres molduras concentricas.                */
+            /* **                                                                             */
+            /* ** Os seletores tem duas classes de proposito: as utilitarias do tema tem uma  */
+            /* ** so, entao estes vencem por especificidade e nao dependem da ordem em que a  */
+            /* ** CSS do componente e injetada. O padding: 0 no container tambem cobre o      */
+            /* ** var(--snk-grid-padding) do proprio snk-grid.css.                            */
+            /* **                                                                             */
+            stack-item.ez-padding--medium,
+            .snk-grid__container.ez-padding--large {
+                padding: 0 !important;
+            }
+
+            snk-taskbar.ez-padding-top--extra-small {
+                padding-top: 0 !important;
+            }
+
+            /* **                                                                             */
+            /* ** RESPIRO INTERNO DA GRADE                                                    */
+            /* **                                                                             */
+            /* ** A moldura que sobrou fica DENTRO do card, como na tela nativa: la o          */
+            /* ** .ag-root-wrapper tem padding lateral e inferior de var(--space--medium).     */
+            /* ** O bloco do AG Grid embutido no nosso ez-themed.css (linha 3003) so declara   */
+            /* ** cursor/position/display/flex/overflow — a regra do padding e mais nova que   */
+            /* ** a versao instalada aqui, entao ela vem deste arquivo.                        */
+            /* **                                                                             */
+            .ag-root-wrapper {
+                /* Sem topo: quem separa do cabecalho e o proprio header da grade. */
+                padding: 0 12px 12px !important;
+
+                /* O .ag-layout-normal e height: 100%, e o AG Grid nao aplica border-box aqui: */
+                /* sem isto os 12px de baixo seriam somados e estourariam a caixa.             */
+                box-sizing: border-box;
+            }
+        </style>
+
+        <!--@BI_STYLE@-->
+    <!-- -->
+
+
+    <!-- CONTEXTO DO SANKHYA -->
+
+        <!-- **                                                                                                -->
+        <!-- ** Sem AngularJS as variaveis de i18n (locale/i18nAll/i18nFramework), o workspace e as portas da  -->
+        <!-- ** impressora nao tem mais consumidor — quem as lia era SkI18nService/SkWorkspace/impressao.js.   -->
+        <!-- ** Sobrou o que o sf.js le para montar a sessao.                                                  -->
+        <!-- **                                                                                                -->
+        <script type="text/javascript">
+
+            /* Variaveis uteis da pagina */
+                APPLICATION_NAME= 'DynaformLauncher';
+                MODULE_ID       = 'DynaformLauncher';
+                PCSF            = "I08joRPTKIBHLGw=";
+                PROFILEID       = 'S4W8LB';
+                RAS             = "aXNTdXA=";
+            /* */
+
+        </script>
+
+        <!-- Modulo de importacao do JQuery (dependencia do sf.js) -->
+        <script src="/mge/js/util/jquery-1.9.1.min.js?v="></script>
+        <!-- Gerenciador do token de autenticacao — sem ele o /mge/service.sbr responde 401 -->
+        <script src="/mge/js/sf/sf.js?v="></script>
+
+        <!-- Contexto que o React consome — nao ha microservico, entao tudo vem daqui ou do /mge/service.sbr -->
+        <script type="text/javascript">
+
+            /* **                                                                                */
+            /* ** O nome do Componente BI NAO fica aqui. Quem o consome e o BI.removerFrame, e   */
+            /* ** ele e chamado de dentro do bundle, no src/index.tsx — que passa o nome direto. */
+            /* ** Um campo aqui seria uma segunda fonte da verdade que ninguem le: ja foi assim, */
+            /* ** e o resultado foi os dois valores divergirem em silencio.                      */
+            /* **                                                                                */
+            window.SANKHYA = {
+                baseFolder : '${BASE_FOLDER}',
+                origin     : window.location.origin,
+                usuario    : '@JSP_USUARIO@'
+            };
+
+            /* Mantido pelo mesmo motivo das telas originais: codigo legado le globalThis.url */
+            globalThis.url = '${BASE_FOLDER}';
+
+            /* **                                                                                 */
+            /* ** SESSAO PARA O BFF (obrigatorio)                                                 */
+            /* **                                                                                 */
+            /* ** O DataFetcher do sankhyablocks monta a URL do GraphQL assim:                    */
+            /* **   mgeSession = window['mgeSession'] || urlParams.get('mgeSession')              */
+            /* ** A URL do html5component.mge nao traz esse parametro, entao sem isto a chamada   */
+            /* ** sai como /mgefin-bff/graphql?mgeSession=undefined e o BFF responde 401          */
+            /* ** "Not authenticated".                                                            */
+            /* **                                                                                 */
+            /* ** O valor e o cookie JSESSIONID sem o sufixo de jvmRoute (o que vem apos o ponto) */
+            /* ** — mesma formula usada pelo jsnk do projeto de injecao de telas, lida direto do  */
+            /* ** document.cookie.                                                                */
+            /* **                                                                                 */
+                (function () {
+
+                    const achado = document.cookie.match (/(?:^|;\s*)JSESSIONID=([^;]*)/);
+
+                    if (!achado) {
+                        console.error ('[bi] cookie JSESSIONID ausente — o BFF vai responder 401.');
+                        return;
+                    }
+
+                    window.mgeSession = decodeURIComponent (achado [1]).replace (/\..*/, '');
+
+                }) ();
+            /* ** */
+
+            /* **                                                                                */
+            /* ** RESOURCEID — NAO E AQUI                                                        */
+            /* **                                                                                */
+            /* ** Sao dois resourceID diferentes, e confundi-los custa tempo:                    */
+            /* **                                                                                */
+            /* ** 1. window['resourceID'] — lido pelo DataFetcher (DataFetcher.js:262) so para   */
+            /* **    montar a query string do service.sbr. NAO afeta permissao nenhuma. Fica     */
+            /* **    indefinido aqui de proposito; o servico funciona sem ele.                   */
+            /* **                                                                                */
+            /* ** 2. O resourceID das PERMISSOES e das configuracoes de grade/formulario, que o  */
+            /* **    snk-application resolve por urlParams e window.workspace. Sem workspace ele */
+            /* **    cai em "unknown.resource.id" e a tela abre somente leitura, com o alerta    */
+            /* **    "Sem permissao". Esse vai como prop do SnkDataUnit — veja a constante       */
+            /* **    RESOURCE_ID no topo do src/Dados.tsx.                                       */
+            /* **                                                                                */
+
+        </script>
+    <!-- -->
+
+
+    <!-- REMOCAO DA MOLDURA DE GADGET -->
+
+        <!-- **                                                                                                -->
+        <!-- ** Este bloco e um recorte do removerFrame do SankhyaJX                                           -->
+        <!-- ** (github.com/wansleynery/SankhyaJX), reescrito aqui para a pagina nao depender de nada externo.  -->
+        <!-- ** Antes ele vinha de um <script src> apontando para um CDN, e isso tinha dois defeitos: a tela    -->
+        <!-- ** parava de funcionar em base sem saida para a internet, e a tag usada era movel, entao uma       -->
+        <!-- ** publicacao nova da lib chegava sozinha em telas ja implantadas.                                 -->
+        <!-- **                                                                                                -->
+        <!-- ** So o removerFrame foi trazido. O JX.post e o JX.consultar ficaram de fora porque nada nesta     -->
+        <!-- ** tela os usa: os dados vem do BFF, pelo proprio sankhyablocks.                                   -->
+        <!-- **                                                                                                -->
+        <!-- ** Nada de template literal aqui dentro. O cifrao-chave e Expression Language para o container     -->
+        <!-- ** JSP, que o avalia dentro do <script> e o troca por string vazia. O zip.js escapa os do bundle,  -->
+        <!-- ** mas os desta pagina ficam literais de proposito (e assim que o BASE_FOLDER e resolvido).        -->
+        <!-- **                                                                                                -->
+        <script type="text/javascript">
+
+            window.BI = window.BI || {};
+
+            /* **                                                                                 */
+            /* ** O nuGdg que ja esta na URL desta pagina, se houver. Quando o shell monta o      */
+            /* ** gadget ele passa esse parametro, e ai o valor e exato por construcao: nao       */
+            /* ** depende de titulo, de seletor de DOM nem de permissao em servico nenhum.        */
+            /* ** E a fonte preferida; as outras duas existem para quando ele nao vier.           */
+            /* **                                                                                 */
+            function nuGdgDaUrl () {
+
+                try {
+
+                    const parametros = new URLSearchParams (window.location.search);
+
+                    let encontrado = null;
+
+                    /* Comparacao sem caixa: o nome do parametro ja apareceu grafado de formas    */
+                    /* diferentes entre versoes do Sankhya.                                       */
+                    parametros.forEach (function (valor, chave) {
+                        if (chave.toLowerCase () === 'nugdg' && valor && valor !== '0') {
+                            encontrado = valor;
+                        }
+                    });
+
+                    return encontrado;
+
+                } catch (erro) { return null; }
+
+            }
+
+            /* **                                                                                 */
+            /* ** Descobre o nuGdg do gadget pelo titulo cadastrado, como o original fazia com o  */
+            /* ** JX.consultar. Exige permissao no DbExplorerSP.executeQuery.                     */
+            /* **                                                                                 */
+            /* ** O apostrofo do titulo e duplicado antes de entrar no SQL. O original concatena  */
+            /* ** direto, e um componente chamado O'Brien quebraria a consulta.                   */
+            /* **                                                                                 */
+            function obterNuGdg (instancia) {
+
+                const daUrl = nuGdgDaUrl ();
+
+                if (daUrl) return Promise.resolve (daUrl);
+
+                if (!instancia) {
+                    console.warn ('[bi] sem nuGdg na URL e sem nome de instancia — a moldura fica.');
+                    return Promise.resolve (0);
+                }
+
+                const url = window.location.origin
+                    + '/mge/service.sbr?serviceName=DbExplorerSP.executeQuery&outputType=json';
+
+                const sql = "SELECT NUGDG FROM TSIGDG WHERE TITULO = '"
+                    + String (instancia).replace (/'/g, "''") + "'";
+
+                return window.fetch (url, {
+                    method      : 'POST',
+                    redirect    : 'follow',
+                    credentials : 'include',
+                    headers     : { 'Content-Type': 'application/json; charset=UTF-8' },
+                    body        : JSON.stringify ({
+                        serviceName : 'DbExplorerSP.executeQuery',
+                        requestBody : { sql: sql }
+                    })
+                })
+                .then (function (resposta) { return resposta.json (); })
+                .then (function (json) {
+
+                    /* O servico responde ora com responseBody na raiz, ora dentro de data. */
+                    const corpo  = (json && json.responseBody)
+                        || (json && json.data && json.data.responseBody);
+                    const linhas = corpo && corpo.rows;
+
+                    const achado = linhas && linhas.length && linhas [0] [0];
+
+                    if (!achado) {
+                        console.warn (
+                            '[bi] nenhum gadget com TITULO = "' + instancia + '" em TSIGDG. '
+                            + 'Confira o nome em src/index.tsx (case sensitive) — a moldura fica.'
+                        );
+                    }
+
+                    return achado || 0;
+
+                })
+                .catch (function (erro) {
+                    console.warn ('[bi] falha ao consultar o nuGdg — a moldura fica.', erro);
+                    return 0;
+                });
+
+            }
+
+            /* **                                                                                 */
+            /* ** Troca o conteudo do gadget por um iframe da propria tela, em tela cheia.        */
+            /* **                                                                                 */
+            /* ** A guarda do DashWindow e o que impede o laco infinito: a pagina recarregada     */
+            /* ** dentro do iframe novo nao tem essa classe no pai, entao a segunda execucao para */
+            /* ** aqui. O original so checa isso depois da consulta; checar antes evita disparar  */
+            /* ** um SELECT toda vez que a tela roda fora de um gadget (o `npm start`, p.ex.).    */
+            /* **                                                                                 */
+            /* ** Os 500ms sao do original e seguram a troca ate o shell terminar de montar o     */
+            /* ** gadget. Ficaram como estao.                                                     */
+            /* **                                                                                 */
+            window.BI.removerFrame = function (configuracoes) {
+
+                const opcoes        = configuracoes || {};
+                const paginaInicial = opcoes.paginaInicial || 'index.jsp';
+
+                let instancia = opcoes.instancia || '';
+                let pai;
+
+                /* Fora do Sankhya, ou em pai de outra origem, nao ha moldura para remover. */
+                try { pai = window.parent.document; }
+                catch (erro) { return; }
+
+                if (!pai || !pai.getElementsByClassName ('DashWindow') [0]) return;
+
+                /* Esconde o alerta do shell e trava a rolagem nos dois niveis acima. */
+                [window.parent, window.parent.parent].forEach (function (janela) {
+                    try {
+
+                        const documento = janela.document;
+                        const alerta    = documento.querySelector ('div.gwt-PopupPanel.alert-box.box-shadow');
+
+                        if (alerta)          alerta.style.display   = 'none';
+                        if (documento.body)  documento.body.style.overflow = 'hidden';
+
+                    } catch (erro) { /* nivel inacessivel: ignora */ }
+                });
+
+                /* **                                                                             */
+                /* ** O titulo no cabecalho do gadget vence o nome passado, como no original: ele */
+                /* ** e o nome do card que esta REALMENTE em tela, enquanto o valor do            */
+                /* ** src/index.tsx e uma constante compilada, que pode estar desatualizada ou    */
+                /* ** ainda no texto de exemplo. O seletor depende de uma classe gerada pelo GWT  */
+                /* ** (GI-BUHVBPVC), que muda entre versoes do Sankhya — por isso o nome passado  */
+                /* ** continua valendo como plano B.                                              */
+                /* **                                                                             */
+                try {
+
+                    const cabecalho = pai.querySelector (
+                        'div.GI-BUHVBPVC > div > div > div > div > div > table > tbody > tr > td > div'
+                    );
+
+                    if (cabecalho && cabecalho.textContent.trim ()) {
+                        instancia = cabecalho.textContent.trim ();
+                    }
+
+                } catch (erro) { /* seletor nao casou: fica o nome passado */ }
+
+                obterNuGdg (instancia).then (function (nuGdg) {
+                    setTimeout (function () {
+
+                        const alvo = pai.getElementsByClassName ('dyna-gadget') [0];
+
+                        if (!alvo) return;
+
+                        /* **                                                                     */
+                        /* ** Sem nuGdg nao ha troca. Recarregar com nuGdg=0 leva a uma tela que  */
+                        /* ** o ERP nao consegue resolver — pior que ficar na moldura pequena,    */
+                        /* ** que ao menos funciona. Os avisos acima dizem o que faltou.          */
+                        /* **                                                                     */
+                        if (!nuGdg || nuGdg === '0') return;
+
+                        /* O caminho e relativo a pasta customizada — o container resolve o resto. */
+                        const destino = '/mge/html5component.mge?entryPoint='
+                            + paginaInicial + '&nuGdg=' + nuGdg;
+
+                        alvo.innerHTML = '<iframe src="' + destino + '" class="gwt-Frame" '
+                            + 'style="width: 100%; height: 100%;"></iframe>';
+
+                    }, 500);
+                });
+
+            };
+
+        </script>
+    <!-- -->
+
+</head>
+
+<body>
+
+    <div id="root"></div>
+
+    <!-- **                                                                                                -->
+    <!-- ** O bundle inteiro (142 chunks + main.js) entra aqui, no fim do <body>, para que #root ja exista -->
+    <!-- ** quando o createRoot(getElementById('root')) do React rodar.                                    -->
+    <!-- **                                                                                                -->
+    <!--@BI_SCRIPT@-->
+
+</body>
+</html>

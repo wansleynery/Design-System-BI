@@ -1,0 +1,40 @@
+{
+  "compilerOptions": {
+    "allowSyntheticDefaultImports": true,
+    "allowUnreachableCode": false,
+    "declaration": false,
+    "experimentalDecorators": true,
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "es2017"
+    ],
+    "moduleResolution": "node",
+    "module": "esnext",
+    "target": "es2017",
+
+    // Classico, e nao "react-jsx": todo arquivo precisa importar o React explicitamente.
+    "jsx": "react",
+
+    "types": [ "node" ],
+
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+
+    // As tres abaixo alinham o `tsc` local ao que o build ja faz por conta propria: o CRA
+    // sobrescreve skipLibCheck/noEmit no ForkTsChecker e so reporta problemas em src/.
+    // Sem elas, um `tsc --noEmit` aqui acusa ~20 erros dentro das typings do @sankhyalabs
+    // que o build ignora — ruido que nao corresponde a nada quebrado.
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "noEmit": true
+  },
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
