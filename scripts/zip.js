@@ -183,13 +183,49 @@ if (restantes) abortar(`${restantes.length} referência(s) a static/media sobrar
  * inclusive dentro de <script> — e o bundle minificado tem ~40 ocorrencias vindas de
  * template literals, que seriam silenciosamente substituidas por vazio. O <% abriria um
  * scriptlet e quebraria a compilacao. </script fecharia a tag mais cedo.
+ *
+ * As tres ultimas linhas nao sao contra o container, e sim contra o NGINX que fica na
+ * frente de algumas bases. O loader de telas mais antigo (o par `sub_filter` + pasta
+ * /scripts/, que o projeto irmao "Injecao de Telas via JS" substitui) e instalado assim:
+ *
+ *     sub_filter '</head>' '<script src="/loader.js"></script></head>';
+ *
+ * e com sub_filter_once off isso vale para TODAS as ocorrencias do corpo da resposta —
+ * inclusive as que estao dentro de uma string JavaScript. O DOMPurify, que vem no bundle,
+ * tem exatamente uma:
+ *
+ *     e='<html xmlns="http://www.w3.org/1999/xhtml"><head></head><body>'+e+"</body></html>"
+ *
+ * O </script> injetado ali fecha a tag do bundle no meio da string, o parser volta a ler
+ * markup a partir de <body>, e 4,6 MB de JS viram texto na tela. Foi o que aconteceu ao
+ * instalar em outra base: SyntaxError "Invalid or unexpected token" apontando para essa
+ * aspa simples, e o `'+e+"");const r=` do texto renderizado como prova.
+ *
+ * Escapar so resolve as tags de FECHAMENTO — `<\/head>` continua sendo "</head>" para o JS
+ * (barra escapada e barra), enquanto `<head>` nao tem barra para esconder. Basta: e o
+ * fechamento que o sub_filter procura. O conserto de verdade e do lado do servidor
+ * (sub_filter_once on, que ja e o padrao, ou excluir /mge/html5component.mge do filtro);
+ * isto aqui so faz o pacote sobreviver a uma base configurada errado.
  */
+const ESCAPES_JSP = {
+  '${': '\\${',
+  '#{': '\\#{',
+  '<%': '<\\%',
+  '</script': '<\\/script',
+  '</head': '<\\/head',
+  '</body': '<\\/body',
+  '</html': '<\\/html',
+};
+
+const PADRAO_ESCAPES_JSP = new RegExp(
+  Object.keys(ESCAPES_JSP)
+    .map((chave) => chave.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|'),
+  'g'
+);
+
 function escaparParaJsp(texto) {
-  return texto
-    .split('${').join('\\${')
-    .split('#{').join('\\#{')
-    .split('<%').join('<\\%')
-    .split('</script').join('<\\/script');
+  return texto.replace(PADRAO_ESCAPES_JSP, (encontrado) => ESCAPES_JSP[encontrado]);
 }
 
 const DIRETIVAS = [
@@ -258,20 +294,17 @@ if (semZip) process.exit(0);
 /* ------------------------------------------------------------ empacotamento ---- */
 
 /*
- * Compress-Archive do PowerShell em vez de uma dependencia npm: instalar pacotes aqui ja e
- * fragil (ver o caso do react-i18next no CLAUDE.md) e nao vale uma dependencia nova so para
- * zipar. Compress-Archive nao sobrescreve de forma confiavel em PowerShell antigo, dai o
- * unlink antes.
+ * Ferramenta nativa do SO em vez de uma dependencia npm: instalar pacotes aqui ja e fragil
+ * (ver o caso do react-i18next no CLAUDE.md) e nao vale uma dependencia nova so para zipar.
+ * Windows usa o Compress-Archive do PowerShell; Linux/macOS usam o binario `zip` (presente
+ * por padrao no macOS e na maioria das distros, ou instalavel via gerenciador de pacotes).
+ * Nenhum dos dois sobrescreve de forma confiavel um zip existente, dai o unlink antes.
  */
 fs.rmSync(zipPath, { force: true });
 
-// Aspas simples do PowerShell: escapa duplicando, para aguentar caminhos com espaços
-// ("Componente de BI React") e apóstrofos.
-const ps = (valor) => `'${valor.replace(/'/g, "''")}'`;
-
 /*
- * Lista explicita em vez de build\*, porque o zip mora DENTRO de build/: com o glob o
- * Compress-Archive enumeraria o proprio arquivo de destino. Filtrar por extensao cobre
+ * Lista explicita em vez de build\*, porque o zip mora DENTRO de build/: com o glob a
+ * ferramenta de zip enumeraria o proprio arquivo de destino. Filtrar por extensao cobre
  * tambem o caso de um bi.zip antigo ter sobrado de uma execucao com --no-build (num build
  * normal o react-scripts esvazia a pasta antes).
  *
@@ -283,17 +316,43 @@ const aEmpacotar = fs.readdirSync(buildDir).filter((nome) => !nome.endsWith('.zi
 
 if (aEmpacotar.length === 0) abortar('nada para empacotar em build/.');
 
-const caminhos = aEmpacotar.map((nome) => ps(path.join(buildDir, nome)));
+const caminhosCompletos = aEmpacotar.map((nome) => path.join(buildDir, nome));
 
-const comando = `Compress-Archive -Path ${caminhos.join(',')} -DestinationPath ${ps(zipPath)} -CompressionLevel Optimal`;
+let resultado;
 
-const resultado = spawnSync(
-  'powershell',
-  ['-NoProfile', '-NonInteractive', '-Command', comando],
-  { stdio: ['ignore', 'inherit', 'inherit'] }
-);
+if (process.platform === 'win32') {
+  // Aspas simples do PowerShell: escapa duplicando, para aguentar caminhos com espaços
+  // ("Componente de BI React") e apóstrofos.
+  const ps = (valor) => `'${valor.replace(/'/g, "''")}'`;
 
-if (resultado.error || resultado.status !== 0) abortar('Compress-Archive falhou.');
+  const comando = `Compress-Archive -Path ${caminhosCompletos.map(ps).join(',')} `
+    + `-DestinationPath ${ps(zipPath)} -CompressionLevel Optimal`;
+
+  resultado = spawnSync(
+    'powershell',
+    ['-NoProfile', '-NonInteractive', '-Command', comando],
+    { stdio: ['ignore', 'inherit', 'inherit'] }
+  );
+
+  if (resultado.error || resultado.status !== 0) abortar('Compress-Archive falhou.');
+} else {
+  // -j (junk paths): grava só o nome do arquivo, sem os diretórios de build/ — equivalente a
+  // passar os arquivos (não a pasta) para o Compress-Archive do Windows.
+  resultado = spawnSync(
+    'zip',
+    ['-j', '-9', zipPath, ...caminhosCompletos],
+    { stdio: ['ignore', 'inherit', 'inherit'] }
+  );
+
+  if (resultado.error) {
+    abortar(
+      `comando "zip" não encontrado. Instale-o (ex.: apt install zip / brew install zip) `
+      + `ou use --no-zip para gerar só build/ e empacotar manualmente. (${resultado.error.message})`
+    );
+  }
+  if (resultado.status !== 0) abortar('zip falhou.');
+}
+
 if (!fs.existsSync(zipPath)) abortar('o zip não foi criado.');
 
 console.log(`[zip] build/${path.basename(zipPath)} gerado (${(fs.statSync(zipPath).size / 1048576).toFixed(1)} MB)`);
