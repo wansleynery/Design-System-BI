@@ -7,11 +7,9 @@
   "private": true,
   "homepage": ".",
   "scripts": {
-    "start": "react-scripts start",
-    "test": "react-scripts test --passWithNoTests",
     "zip": "node scripts/zip.js",
     "zip:split": "node scripts/zip.js --split",
-    "build": "npm run build.prod && gulp",
+    "build": "echo AVISO: 'npm run build' nao funciona neste projeto (build.prod/gulp nao existem aqui) - rodando 'npm run zip' no lugar... && npm run zip",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {

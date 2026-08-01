@@ -27,7 +27,23 @@ interface Window {
      * deste projeto, e a chamada em index.tsx usa `?.` para nao quebrar em outro host.
      */
     BI?: {
-        removerFrame: (opcoes: { paginaInicial: string; instancia: string }) => void;
+
+        /*
+         * Resolve com true quando a moldura foi removida — isto e, quando ESTE documento
+         * acabou de ser substituido por um iframe em tela cheia e nao vale mais a pena
+         * montar nada nele. Ver o uso em src/index.tsx.
+         */
+        removerFrame: (opcoes: {
+            paginaInicial: string;
+            instancia: string;
+
+            /*
+             * Vai como parametro na URL do iframe em tela cheia. E de la que o
+             * snk-application le o resourceID da aplicacao — veja o comentario da constante
+             * RESOURCE_ID em src/Dados.tsx.
+             */
+            resourceID?: string;
+        }) => Promise<boolean>;
     };
 
     /*
@@ -35,8 +51,9 @@ interface Window {
      * DataFetcher monta para o service.sbr (DataFetcher.js:262) — nada mais depende dele, e
      * o servico funciona sem.
      *
-     * O das permissoes e das configuracoes de grade/formulario vai como prop do
-     * SnkDataUnit: veja a constante RESOURCE_ID no topo do src/Dados.tsx.
+     * O das permissoes e das configuracoes de grade/formulario e outro: vai como prop do
+     * SnkDataUnit e como parametro na URL do iframe montado pelo removerFrame. Veja a
+     * constante RESOURCE_ID no topo do src/Dados.tsx.
      */
     resourceID?: string;
 

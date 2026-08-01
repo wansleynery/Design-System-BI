@@ -51,8 +51,8 @@ Funciona em base sem saída para a internet.
 ## Instalação
 
 ```bash
-git clone <url-do-repo>
-cd web
+git clone https://github.com/wansleynery/Design-System-BI
+cd Design-System-BI
 npm install          # ~1300 pacotes, ~40s
 ```
 
@@ -63,14 +63,14 @@ Se o `npm install` reclamar de `ERESOLVE`, veja
 
 | Comando             | O que faz                                                       |
 |---------------------|-----------------------------------------------------------------|
+| `npm install`       | instala as dependências; ~1300 pacotes, ~40s                    |
 | `npm run zip`       | **o que você vai usar**: build → embute tudo → `build/bi.zip`   |
 | `npm run zip:split` | escape hatch: gera `index.jsp` + `bi.js` (dois arquivos)        |
-| `npm start`         | dev server do CRA — a tela sobe vazia, veja abaixo              |
-| `npm test`          | `--passWithNoTests`; não há testes                              |
-| `npm run build`     | **não funciona** — sobra do monorepo interno, use `npm run zip` |
+| `npm run build`     | avisa que não é o comando certo e roda `npm run zip` no lugar   |
 
-O `npm run build` falha na primeira linha sem tocar em `build/`; o porquê está em
-[Pegadinhas](#pegadinhas-herdadas-do-projeto-original).
+`npm run build` é o comando padrão que qualquer ferramenta (CI, editor, hábito) tende a
+chamar, mas o script `build.prod && gulp` herdado do monorepo não existe aqui. Em vez de
+falhar sem tocar em `build/`, ele agora imprime um aviso e cai para `npm run zip`.
 
 Flags do `npm run zip` (passe com `--`, ex.: `npm run zip -- --no-zip`):
 
@@ -78,9 +78,9 @@ Flags do `npm run zip` (passe com `--`, ex.: `npm run zip -- --no-zip`):
 - `--no-zip` — para depois de gerar `build/`, sem empacotar (deixa os arquivos soltos)
 - `--no-build` — reaproveita o `build/static` existente, para depurar o próprio script
 
-**`npm start` não renderiza a tela, e isso é esperado.** O `SnkCrud` conversa com o BFF do
-módulo e depende da sessão do ERP; fora do Sankhya não há sessão nem BFF. Um teste local
-prova que o bundle *carrega*, nunca que a tela *funciona* — só o upload prova isso.
+Não há dev server nem testes neste projeto: o `SnkCrud` conversa com o BFF do módulo e
+depende da sessão do ERP, então fora do Sankhya não há sessão nem BFF para renderizar
+nada — só o upload do zip prova que a tela funciona.
 
 ## Estrutura
 
@@ -323,7 +323,7 @@ Como funciona, na ordem:
 
 1. Se não há `DashWindow` no documento pai, retorna calado. **É essa guarda que impede o
    laço infinito**: a página recarregada dentro do iframe novo não tem essa classe, então a
-   segunda execução para aí. Também é o motivo de o `npm start` não fazer nada.
+   segunda execução para aí.
 2. Esconde o alerta do shell e trava a rolagem nos dois níveis acima.
 3. Resolve o `nuGdg` do gadget (abaixo).
 4. Depois de 500 ms, troca o `innerHTML` do `.dyna-gadget` do pai por um iframe apontando
@@ -433,10 +433,9 @@ Este template nasceu do exemplo oficial `@sankhyalabs/components-demo`. Algumas 
 vieram junto e ficaram **de propósito**, para não divergir do upstream — não são bugs para
 caçar:
 
-- **`npm run build` não funciona.** Ele roda `npm run build.prod && gulp`, e nem o script
-  `build.prod` nem um gulpfile/dependência do gulp existem aqui (pertencem ao monorepo
-  interno). Falha na primeira linha sem tocar em `build/`, o que dá a impressão de "o build
-  não produziu nada". **Use `npm run zip`.**
+- **`npm run build` não é o `build.prod && gulp` do monorepo.** Nem o script `build.prod`
+  nem um gulpfile/dependência do gulp existem aqui (pertencem ao monorepo interno), então o
+  script agora só avisa disso e cai para `npm run zip`.
 - **O `tsconfig.json` usa o clássico `"jsx": "react"`**, e não o `"react-jsx"` do CRA 5 —
   então **todo arquivo precisa importar o React explicitamente**. Com `noUnusedLocals`
   ligado, trocar isso obriga a remover o import de todos os arquivos de uma vez; ficou como

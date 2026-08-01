@@ -157,6 +157,62 @@
                 /* sem isto os 12px de baixo seriam somados e estourariam a caixa.             */
                 box-sizing: border-box;
             }
+
+            /* **                                                                             */
+            /* ** OVERLAY DE ERRO NO CARREGAMENTO                                             */
+            /* **                                                                             */
+            /* ** Escondido por padrao (display: none inline, no elemento). O script que      */
+            /* ** repete o lote GraphQL (contexto do Sankhya, mais abaixo) troca esse display */
+            /* ** para 'flex' quando a repeticao tambem falha. Fica fora de #root de          */
+            /* ** proposito: se o React nunca chega a montar porque o lote falhou antes disso,*/
+            /* ** o overlay ainda aparece.                                                    */
+            /* **                                                                             */
+            #bi-erro-carregamento {
+                position: fixed;
+                inset: 0;
+                z-index: 999999;
+                align-items: center;
+                justify-content: center;
+                background: rgba(0, 0, 0, 0.45);
+            }
+
+            .bi-erro-carregamento__caixa {
+                max-width: 360px;
+                padding: 24px;
+                border-radius: 8px;
+                background: #ffffff;
+                box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+                font-family: Arial, Helvetica, sans-serif;
+                text-align: center;
+            }
+
+            .bi-erro-carregamento__titulo {
+                margin: 0 0 8px;
+                font-size: 16px;
+                font-weight: bold;
+                color: #333333;
+            }
+
+            .bi-erro-carregamento__texto {
+                margin: 0 0 16px;
+                font-size: 13px;
+                line-height: 1.4;
+                color: #666666;
+            }
+
+            .bi-erro-carregamento__botao {
+                padding: 8px 20px;
+                border: none;
+                border-radius: 4px;
+                background: #1976d2;
+                color: #ffffff;
+                font-size: 14px;
+                cursor: pointer;
+            }
+
+            .bi-erro-carregamento__botao:hover {
+                background: #1560ac;
+            }
         </style>
 
         <!--@BI_STYLE@-->
@@ -179,6 +235,30 @@
                 PROFILEID       = 'S4W8LB';
                 RAS             = "aXNTdXA=";
             /* */
+
+            /* **                                                                                */
+            /* ** MODULO DO BFF — para onde vao TODAS as queries GraphQL                         */
+            /* **                                                                                */
+            /* ** O snk-application monta o caminho como /<MGE_MODULE_NAME>/graphql              */
+            /* ** (DataFetcher.js:48) e, quando a variavel nao existe, assume 'mgefin-bff'       */
+            /* ** — o BFF do Financeiro (snk-application.js:1026). Numa tela nativa quem define  */
+            /* ** isso e o shell; aqui nao ha shell, entao o valor precisa estar escrito.        */
+            /* **                                                                                */
+            /* ** Pedir a um BFF a entidade de outro modulo devolve erro do servidor, nao uma    */
+            /* ** resposta vazia: o lote inteiro de queries falha de uma vez com HTTP 500 e a    */
+            /* ** tela nao monta. Deixar no default e apostar que a entidade e do Financeiro.    */
+            /* **                                                                                */
+            /* ** Para descobrir o certo, abra a tela nativa equivalente e veja no console       */
+            /* **                                                                                */
+            /* **     window.MGE_MODULE_NAME                                                     */
+            /* **                                                                                */
+            /* ** ou o caminho da requisicao /<modulo>/graphql na aba Network.                   */
+            /* **                                                                                */
+            /* ** O mesmo valor tambem forma o caminho do appmessages.js                         */
+            /* ** (/<modulo>/labsApps/<APPLICATION_NAME>/build/messages), cujo 404 e cosmetico.  */
+            /* **                                                                                */
+                MGE_MODULE_NAME = 'mgefin-bff';
+            /* ** */
 
         </script>
 
@@ -232,6 +312,111 @@
                 }) ();
             /* ** */
 
+            /* **                                                                                 */
+            /* ** UMA REPETICAO DO LOTE GRAPHQL EM ERRO 5xx                                       */
+            /* **                                                                                 */
+            /* ** O snk-application abre a tela com um lote de ~8 queries num unico POST           */
+            /* ** (graphql-request/batchRequests). Se esse POST falha, falha inteiro: metadados,  */
+            /* ** permissoes e configuracoes de grade e formulario somem de uma vez e a tela nao  */
+            /* ** monta. Nao ha ponto unico de falha maior nesta pagina.                          */
+            /* **                                                                                 */
+            /* ** Ja foi visto um 500 de corpo vazio nesse lote, intermitente: o mesmo payload,   */
+            /* ** com as mesmas variaveis e a mesma sessao, reenviado do console, responde 200 —  */
+            /* ** as oito queries, uma a uma e em lote. Ou seja, a causa esta do lado do servidor */
+            /* ** e nao no que mandamos; daqui so da para nao deixar a tela morrer por causa      */
+            /* ** dela.                                                                           */
+            /* **                                                                                 */
+            /* ** Condicoes para repetir, todas necessarias:                                      */
+            /* **                                                                                 */
+            /* **   - URL de GraphQL. O service.sbr sai por XHR e nem passa por aqui;             */
+            /* **   - status >= 500. Erro de negocio do BFF vem como 200 + errors[], e 401/403    */
+            /* **     nao melhoram com insistencia;                                               */
+            /* **   - corpo em texto e SEM "mutation". O mesmo endpoint grava (saveData,          */
+            /* **     saveResource, filtros personalizados) e reenviar gravacao duplica registro. */
+            /* **                                                                                 */
+            /* ** Precisa estar AQUI, antes do bundle: o cross-fetch, que o graphql-request usa,  */
+            /* ** copia a referencia de window.fetch quando o modulo dele e avaliado              */
+            /* ** (browser-ponyfill.js, `var ctx = __global__.fetch ? ...`). Trocar o global mais */
+            /* ** tarde, de dentro do React, nao alcanca mais nada.                               */
+            /* **                                                                                 */
+            /* ** Se a repeticao TAMBEM vier >= 500, desistimos de tentar sozinhos e mostramos o  */
+            /* ** overlay de #bi-erro-carregamento (marcacao e CSS no <head>/<body> deste mesmo   */
+            /* ** arquivo) com um botao "Recarregar". Ele faz window.location.reload() — que      */
+            /* ** recarrega so este documento (o iframe em tela cheia que o removerFrame monta),  */
+            /* ** nunca a janela do shell do Sankhya, entao as outras abas/telas abertas na mesma  */
+            /* ** sessao do usuario nao sao afetadas.                                             */
+            /* **                                                                                 */
+                (function () {
+
+                    const fetchOriginal = window.fetch.bind (window);
+                    const ESPERA_MS     = 400;
+
+                    const esperar = function (ms) {
+                        return new Promise (function (resolver) { setTimeout (resolver, ms); });
+                    };
+
+                    const mostrarErroCarregamento = function () {
+
+                        const overlay = document.getElementById ('bi-erro-carregamento');
+
+                        if (!overlay) return;
+
+                        overlay.style.display = 'flex';
+
+                    };
+
+                    window.fetch = function (recurso, opcoes) {
+
+                        const url = typeof recurso === 'string'
+                            ? recurso : (recurso && recurso.url) || '';
+
+                        if (url.indexOf ('/graphql') === -1) return fetchOriginal (recurso, opcoes);
+
+                        return fetchOriginal (recurso, opcoes).then (function (resposta) {
+
+                            const corpo = opcoes && opcoes.body;
+
+                            const repetivel = resposta.status >= 500
+                                && typeof corpo === 'string'
+                                && corpo.indexOf ('mutation') === -1;
+
+                            if (!repetivel) return resposta;
+
+                            console.warn (
+                                '[bi] GraphQL respondeu ' + resposta.status
+                                + ' — repetindo o lote uma vez em ' + ESPERA_MS + 'ms.'
+                            );
+
+                            return esperar (ESPERA_MS).then (function () {
+                                return fetchOriginal (recurso, opcoes);
+                            }).then (function (respostaRepetida) {
+
+                                if (respostaRepetida.status >= 500) {
+                                    console.error (
+                                        '[bi] repeticao tambem respondeu '
+                                        + respostaRepetida.status + ' — desistindo.'
+                                    );
+                                    mostrarErroCarregamento ();
+                                }
+
+                                return respostaRepetida;
+
+                            });
+
+                        }).catch (function (erro) {
+
+                            /* Falha de rede (sem nem chegar a ter status HTTP) tambem esgota a  */
+                            /* tentativa: nao ha o que repetir sem uma resposta para inspecionar. */
+                            mostrarErroCarregamento ();
+                            throw erro;
+
+                        });
+
+                    };
+
+                }) ();
+            /* ** */
+
             /* **                                                                                */
             /* ** RESOURCEID — NAO E AQUI                                                        */
             /* **                                                                                */
@@ -244,8 +429,9 @@
             /* ** 2. O resourceID das PERMISSOES e das configuracoes de grade/formulario, que o  */
             /* **    snk-application resolve por urlParams e window.workspace. Sem workspace ele */
             /* **    cai em "unknown.resource.id" e a tela abre somente leitura, com o alerta    */
-            /* **    "Sem permissao". Esse vai como prop do SnkDataUnit — veja a constante       */
-            /* **    RESOURCE_ID no topo do src/Dados.tsx.                                       */
+            /* **    "Sem permissao". Esse vai como prop do SnkDataUnit e, para alcancar tambem  */
+            /* **    o snk-application, como &resourceID= na URL do iframe montado pelo          */
+            /* **    removerFrame logo abaixo — veja a constante RESOURCE_ID no src/Dados.tsx.   */
             /* **                                                                                */
 
         </script>
@@ -372,19 +558,31 @@
             /* ** Os 500ms sao do original e seguram a troca ate o shell terminar de montar o     */
             /* ** gadget. Ficaram como estao.                                                     */
             /* **                                                                                 */
+            /* ** DEVOLVE UMA PROMISE<BOOLEAN>: true quando este documento acabou de ser          */
+            /* ** substituido, false quando a moldura ficou (fora de gadget, sem nuGdg, pai       */
+            /* ** inacessivel). O src/index.tsx usa isso para NAO montar o React numa pagina que  */
+            /* ** ja esta condenada — sem isso a tela sobe duas vezes por abertura, e as duas     */
+            /* ** cargas disputam o mesmo lote de queries no BFF com 500ms de diferenca.          */
+            /* **                                                                                 */
+            /* ** Todos os caminhos precisam resolver: uma promise pendente aqui deixa a tela em  */
+            /* ** branco la.                                                                      */
+            /* **                                                                                 */
             window.BI.removerFrame = function (configuracoes) {
 
                 const opcoes        = configuracoes || {};
                 const paginaInicial = opcoes.paginaInicial || 'index.jsp';
+                const resourceID    = opcoes.resourceID || '';
 
                 let instancia = opcoes.instancia || '';
                 let pai;
 
                 /* Fora do Sankhya, ou em pai de outra origem, nao ha moldura para remover. */
                 try { pai = window.parent.document; }
-                catch (erro) { return; }
+                catch (erro) { return Promise.resolve (false); }
 
-                if (!pai || !pai.getElementsByClassName ('DashWindow') [0]) return;
+                if (!pai || !pai.getElementsByClassName ('DashWindow') [0]) {
+                    return Promise.resolve (false);
+                }
 
                 /* Esconde o alerta do shell e trava a rolagem nos dois niveis acima. */
                 [window.parent, window.parent.parent].forEach (function (janela) {
@@ -419,28 +617,48 @@
 
                 } catch (erro) { /* seletor nao casou: fica o nome passado */ }
 
-                obterNuGdg (instancia).then (function (nuGdg) {
-                    setTimeout (function () {
+                return obterNuGdg (instancia).then (function (nuGdg) {
+                    return new Promise (function (resolver) { setTimeout (function () {
 
                         const alvo = pai.getElementsByClassName ('dyna-gadget') [0];
 
-                        if (!alvo) return;
+                        if (!alvo) { resolver (false); return; }
 
                         /* **                                                                     */
                         /* ** Sem nuGdg nao ha troca. Recarregar com nuGdg=0 leva a uma tela que  */
                         /* ** o ERP nao consegue resolver — pior que ficar na moldura pequena,    */
                         /* ** que ao menos funciona. Os avisos acima dizem o que faltou.          */
                         /* **                                                                     */
-                        if (!nuGdg || nuGdg === '0') return;
+                        if (!nuGdg || nuGdg === '0') { resolver (false); return; }
 
-                        /* O caminho e relativo a pasta customizada — o container resolve o resto. */
+                        /* **                                                                     */
+                        /* ** O caminho e relativo a pasta customizada — o container resolve o    */
+                        /* ** resto.                                                              */
+                        /* **                                                                     */
+                        /* ** O resourceID entra aqui porque esta e a UNICA URL desta tela que    */
+                        /* ** escrevemos: a primeira, montada pelo shell, nao aceita parametro    */
+                        /* ** nosso. O snk-application le urlParams.get('resourceID') antes de    */
+                        /* ** cair em 'unknown.resource.id', entao a pagina recarregada dentro    */
+                        /* ** deste iframe resolve grade, formulario, resumo e permissoes no      */
+                        /* ** mesmo recurso — e nao mais metade em cada.                          */
+                        /* **                                                                     */
+                        /* ** O valor vem do bundle (src/index.tsx repassa a constante do         */
+                        /* ** src/Dados.tsx). Sem ele a URL sai como antes.                       */
+                        /* **                                                                     */
                         const destino = '/mge/html5component.mge?entryPoint='
-                            + paginaInicial + '&nuGdg=' + nuGdg;
+                            + paginaInicial + '&nuGdg=' + nuGdg
+                            + (resourceID ? '&resourceID=' + encodeURIComponent (resourceID) : '');
+
+                        /* **                                                                     */
+                        /* ** Resolve ANTES de trocar o innerHTML: a atribuicao abaixo destroi    */
+                        /* ** este documento, e o que vier depois dela pode nunca rodar.           */
+                        /* **                                                                     */
+                        resolver (true);
 
                         alvo.innerHTML = '<iframe src="' + destino + '" class="gwt-Frame" '
                             + 'style="width: 100%; height: 100%;"></iframe>';
 
-                    }, 500);
+                    }, 500); });
                 });
 
             };
@@ -453,6 +671,27 @@
 <body>
 
     <div id="root"></div>
+
+    <!-- **                                                                                                -->
+    <!-- ** OVERLAY DE ERRO NO CARREGAMENTO                                                                -->
+    <!-- **                                                                                                -->
+    <!-- ** display:none inline vence a regra de CSS ate o script de contexto (acima, no <head>) trocar    -->
+    <!-- ** para 'flex' — so acontece quando o lote GraphQL de abertura falha mesmo apos a repeticao unica.-->
+    <!-- ** O onclick e inline (em vez de addEventListener) porque o script que preencheria isso roda no  -->
+    <!-- ** <head>, antes deste elemento existir no DOM.                                                  -->
+    <!-- **                                                                                                -->
+    <div id="bi-erro-carregamento" style="display: none;">
+        <div class="bi-erro-carregamento__caixa">
+            <p class="bi-erro-carregamento__titulo">Não foi possível carregar os dados desta tela.</p>
+            <p class="bi-erro-carregamento__texto">
+                Isso costuma ser algo temporário no servidor. Clique abaixo para recarregar apenas este
+                componente — as outras abas abertas no Sankhya não serão fechadas.
+            </p>
+            <button type="button" class="bi-erro-carregamento__botao" onclick="window.location.reload()">
+                Recarregar
+            </button>
+        </div>
+    </div>
 
     <!-- **                                                                                                -->
     <!-- ** O bundle inteiro (142 chunks + main.js) entra aqui, no fim do <body>, para que #root ja exista -->

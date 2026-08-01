@@ -1,6 +1,8 @@
-import React from 'react';
-import { SnkApplication, SnkDataUnit, SnkCrud } from "@sankhyalabs/sankhyablocks/react/components";
+import React, { useState } from 'react';
+import { DataUnit } from "@sankhyalabs/core";
+import { SnkApplication, SnkDataUnit, SnkCrud, SnkFilterBar } from "@sankhyalabs/sankhyablocks/react/components";
 import { gerenciadorBarraTarefas, aoClicarNaBarra } from './BarraTarefas';
+import { filtrosPadrao } from './Filtros';
 
 /*
  * RESOURCEID DA TELA — preencha, senao a tela abre somente leitura.
@@ -15,17 +17,30 @@ import { gerenciadorBarraTarefas, aoClicarNaBarra } from './BarraTarefas';
  *         ||  window.workspace?.resourceID  ||  'unknown.resource.id'
  *
  * Numa tela nativa quem preenche isso e o shell do Sankhya, via window.workspace. Como esta
- * tela roda sem AngularJS e sem workspace, e a URL do html5component.mge nao traz nenhum dos
- * dois parametros, a resolucao cai em 'unknown.resource.id'. As permissoes sao entao
- * consultadas em cfg://auth/unknown.resource.id, que nao existe, e o snk-data-unit trata
- * ausencia de permissao como negacao:
+ * tela roda sem AngularJS e sem workspace, e a URL do html5component.mge que o shell monta
+ * nao traz nenhum dos dois parametros, a resolucao cai em 'unknown.resource.id'. As
+ * permissoes sao entao consultadas em cfg://auth/unknown.resource.id, que nao existe, e o
+ * snk-data-unit trata ausencia de permissao como negacao:
  *
  *     isAllowed (flag) { return this._permissions ? ... : false; }   snk-data-unit.js:519
  *
  * O sintoma e o alerta "Sem permissao / Nao e possivel fazer alteracoes".
  *
- * Passar o resourceID ao SnkDataUnit resolve: ele chama getAllAccess (this.resourceID), que
- * vai direto ao cfg://auth/<resourceID> em vez de usar o da aplicacao.
+ * Esta constante ataca os dois lados dessa resolucao:
+ *
+ *   - como prop do SnkDataUnit, faz o getAllAccess (this.resourceID) ir direto ao
+ *     cfg://auth/<resourceID> em vez de usar o da aplicacao, e nomeia o DataUnit como
+ *     dd://<entidade>/<resourceID> (snk-application.js:486-495);
+ *
+ *   - repassada ao removerFrame pelo src/index.tsx, entra como &resourceID= na URL do
+ *     iframe em tela cheia, que e a unica URL desta tela sob nosso controle. Dai o
+ *     snk-application a le pelo urlParams e as configuracoes de grade, formulario, resumo e
+ *     valores padrao passam a ser buscadas no mesmo recurso — sem isso metade do lote de
+ *     queries continua indo para cfg://.../unknown.resource.id.
+ *
+ * Note que a PRIMEIRA carga, a de dentro da moldura do gadget, ainda resolve
+ * 'unknown.resource.id': aquela URL vem do shell. Ela e descartada pelo removerFrame, mas se
+ * a moldura nao for removida (sem nuGdg, ou fora de um gadget) e esse o valor que fica.
  *
  * Para descobrir o valor: abra a tela nativa equivalente e rode no console
  *
@@ -38,26 +53,56 @@ import { gerenciadorBarraTarefas, aoClicarNaBarra } from './BarraTarefas';
  * padrao quando o valor e undefined ('' != undefined), e '' vai consultar cfg://auth/ e
  * falhar — mesmo alerta de novo.
  */
-const RESOURCE_ID = 'br.com.sankhya.core.cad.parceiros';
+export const RESOURCE_ID = 'br.com.sankhya.core.cad.parceiros';
+const entidade = "Parceiro";
 
 /*
  * Tela de dados: grade + barra de filtros + formulario da entidade.
  *
  * O aninhamento e obrigatorio — o SnkCrud exige SnkApplication (config, permissoes,
- * mensagens) e SnkDataUnit (metadados e estado da entidade) como pais.
+ * mensagens) e SnkDataUnit (metadados e estado da entidade) como pais. O SnkFilterBar
+ * entra como outro filho direto do SnkDataUnit.
+ *
+ * SnkFilterBar so monta depois do `onDataUnitReady` e recebe o `dataUnit` explicito por
+ * prop, em vez de deixa-lo subir o `parentElement` sozinho procurando por um
+ * <snk-data-unit> (o que a lib faz quando a prop nao e informada): esse auto-discovery
+ * roda dentro do componentWillLoad do SnkFilterBar e, se o <snk-data-unit> pai ainda nao
+ * tiver o proprio dataUnit pronto naquele instante, ele so registra um listener de
+ * "dataUnitReady" e segue em frente sem esperar — daí o componentWillLoad chama
+ * loadConfigFromStorage com `this.dataUnit` ainda undefined, e a lib tenta ler
+ * `this.dataUnit.name` (snk-filter-bar.js:384/387), estourando "TypeError: Cannot read
+ * properties of undefined (reading 'name')" e sendo relancado como "Falha ao buscar
+ * configuração de filtros". Gatear no evento (como o exemplo oficial recomenda para o
+ * SnkCrud) fecha essa corrida.
  */
-const Dados = () => (
-    <SnkApplication configName="Parceiro">
-        <SnkDataUnit
-            entityName = "Parceiro"
-            resourceID = {RESOURCE_ID || undefined}
-        >
-            <SnkCrud
-                taskbarManager = {gerenciadorBarraTarefas}
-                onActionClick  = {aoClicarNaBarra}
-            />
-        </SnkDataUnit>
-    </SnkApplication>
-);
+const Dados = () => {
+    const [dataUnit, setDataUnit] = useState<DataUnit>();
+
+    return (
+        <SnkApplication configName={entidade}>
+            <SnkDataUnit
+                entityName     = {entidade}
+                resourceID     = {RESOURCE_ID || undefined}
+                onDataUnitReady = {(evento) => setDataUnit(evento.detail)}
+            >
+                {dataUnit && (
+                    <SnkFilterBar
+                        configName          = {entidade}
+                        resourceID          = {RESOURCE_ID || undefined}
+                        dataUnit            = {dataUnit}
+                        /* O `as any` e so aqui, na fronteira com a prop: a SnkFilterItemConfig da
+                           lib tipa `type`/`filterType` como enum, e filtrosPadrao (Filtros.tsx) usa
+                           string por nao poder importar esses enums — ver o comentario la. */
+                        filterCustomConfig  = {filtrosPadrao as any}
+                    />
+                )}
+                <SnkCrud
+                    taskbarManager = {gerenciadorBarraTarefas}
+                    onActionClick  = {aoClicarNaBarra}
+                />
+            </SnkDataUnit>
+        </SnkApplication>
+    );
+};
 
 export default Dados;
