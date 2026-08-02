@@ -36,13 +36,16 @@ Este template resolve a distância entre as duas coisas:
 É lá que estão o catálogo (`Componentes`, `Utilitários`), a `API Java` do BFF e o
 onboarding. Ao criar uma tela nova, comece pela página do bloco que você quer
 (`snk-crud`, `snk-grid`, `snk-form`, `snk-filter-bar`, …): os exemplos de aninhamento e as
-props de cada um vêm de lá. O `src/Dados.tsx` deste repositório é o exemplo de `snk-crud`
-da documentação, verbatim.
+props de cada um vêm de lá. O `src/Dados.tsx` deste repositório segue o exemplo de
+`snk-crud` da documentação, acrescentando só o `resourceID` (obrigatório fora do shell) e o
+rodapé de totais — os dois documentados abaixo.
 
 ## Requisitos
 
 - Node 16+ e npm
-- Windows para o `npm run zip` (o empacotamento usa `Compress-Archive` do PowerShell)
+- Windows, Linux ou macOS: o empacotamento usa `Compress-Archive` do PowerShell no Windows e
+  o binário `zip` nos demais (presente por padrão no macOS e na maioria das distros; se
+  faltar, o script avisa em vez de falhar em silêncio)
 - Uma base Sankhya com permissão para cadastrar Componente BI
 
 A tela **não busca nada fora da base** — nem em tempo de build, nem em tempo de execução.
@@ -89,6 +92,7 @@ src/                VOCÊ TRABALHA AQUI
   index.tsx         bootstrap: createRoot + custom elements + removerFrame (nome do card)
   Dados.tsx         a tela em si — troque isto pela sua
   BarraTarefas.tsx  exemplo de botão customizado na barra do SnkCrud
+  Rodape.tsx        exemplo de rodapé de totais, projetado no slot SnkGridFooter
   sankhya.d.ts      tipos dos globais que a página publica (window.BI, window.SANKHYA)
 public/
   index.html        infraestrutura — NÃO MEXA. Sessão, tokens e marcadores de build.
@@ -174,6 +178,12 @@ Troque `Parceiro` pela sua entidade. Para outros blocos (`SnkGrid`, `SnkForm`,
 `SnkFilterBar`, …) consulte a [documentação de referência](#referência-de-implementação)
 — cada página traz o aninhamento exigido.
 
+**Escolha `SnkCrud` ou `SnkGrid` sabendo o que cada um custa.** O `SnkCrud` é grade +
+formulário (duplo clique numa linha) + anexos + configurador. O `SnkGrid` é só a grade, e
+monta sozinho o `snk-data-unit` acima dele — em compensação, expõe como props coisas que o
+`SnkCrud` não repassa, como a configuração da barra de filtros. Se a sua tela não precisa
+do formulário, o `SnkGrid` deixa tudo declarativo.
+
 O `DataUnit` é o hub de estado da tela, **não** o state do React. Uma tela real configura
 os cinco loaders (`metadataLoader`, `dataLoader`, `saveLoader`, `removeLoader`,
 `recordLoader`) contra o BFF. Registros são chaveados por `__record__id__`; campos são
@@ -181,8 +191,35 @@ descritos por metadados (`name`, `label`, `dataType`, `userInterface`).
 
 A documentação recomenda uma *Critical Note* que este template **não** implementa: travar
 o filho no `onDataUnitReady` (`{dataUnit && <SnkCrud />}`) para o `SnkDataUnit` inicializar
-primeiro. Aqui o `SnkCrud` renderiza incondicionalmente, como no exemplo básico. Se sua
+primeiro. Aqui o `SnkCrud` renderiza incondicionalmente, como no exemplo básico — o
+`onDataUnitReady` é usado só para o rodapé assinar o `DataUnit`, não como trava. Se sua
 tela depender de estado pronto na montagem, siga a nota.
+
+### Filtros
+
+**Filtros não são definidos em código, e isso é da plataforma.** A barra do `SnkCrud` é
+alimentada pelo que estiver cadastrado no `resourceID` e pelos filtros personalizados que o
+usuário criar (botão **+ Filtros**), que o servidor devolve e persiste sozinho. As props que
+definiriam filtros por código (`filterCustomConfig`) pertencem ao `snk-grid`, e o `snk-crud`
+não as expõe nem repassa — só `filterBarTitle`, `autoLoad`, `disablePersonalizedFilter` e
+`filterBarLegacyConfigName`. Para herdar filtros já cadastrados em outro recurso, o caminho
+documentado é o `filterBarLegacyConfigName`.
+
+Duas armadilhas que economizam horas:
+
+- **Sem nenhum filtro, a barra inteira some** — e o botão **+ Filtros** vai junto, então o
+  usuário não consegue criar o primeiro. O `snk-grid` desmonta a barra quando a config volta
+  só com o grupo de personalizados vazio. Se a barra não aparecer numa base nova, é isso, não
+  a sua tela: cadastre um filtro no recurso ou aponte o `filterBarLegacyConfigName`.
+- **Os critérios são combinados com E.** Um filtro personalizado esquecido ativo se soma ao
+  que você digitar, e o resultado vem vazio sem explicação. A pílula dele fica na barra, com
+  um `×` para limpar.
+
+**Nunca acrescente um `<SnkFilterBar>` ao lado do `SnkCrud` ou do `SnkGrid`** — os dois já
+montam a sua. Duas barras colidem no registro de *filter providers* do `DataUnit` (a chave é
+derivada do código do método, então instâncias da mesma classe empatam), a última a registrar
+apaga a anterior, e a grade recarrega sem critério nenhum — sem erro no console. O exemplo
+avulso da documentação é para telas **sem** grade.
 
 ### Botão na barra de tarefas
 
@@ -194,6 +231,35 @@ Duas armadilhas documentadas no arquivo: o evento `onActionClick` dispara para *
 botão da barra (filtrar pelo `name` é obrigatório), e com `iconName` + `text` os campos
 `hint` e `text` chegam **trocados** no botão, por uma inversão de argumentos na própria
 lib.
+
+### Rodapé de totais
+
+`src/Rodape.tsx` mostra como pôr conteúdo próprio abaixo da grade — a faixa de totais que a
+tela nativa de Movimentação Financeira exibe. **Não existe componente de totais na lib**: a
+tela nativa projeta o próprio HTML no slot `SnkGridFooter`, que o `snk-grid` renderiza depois
+da grade e o `snk-crud` repassa. Do React, basta um filho com esse `slot`:
+
+```tsx
+<SnkCrud …>
+    <Rodape totais={totais} />
+</SnkCrud>
+```
+
+Duas coisas para não descobrir do jeito difícil:
+
+- **Renderize o elemento sempre, mesmo sem dados** — nunca `return null`. Os componentes são
+  Stencil *scoped*, então o slot não é nativo: quem realoca o nó é o host, durante o render
+  dele. Um elemento criado depois fica onde o React o pôs e aparece no **topo** da tela.
+- **Os números são seus.** Receita/Despesa/Saldo da tela nativa vêm de um recurso
+  `totals://` cadastrado no ERP para aquela tela, e o método que o busca não está exposto aos
+  elementos. O que o `DataUnit` entrega de graça, já filtrado pela barra, é o total da
+  consulta (`getPaginationInfo`), o que está carregado na página (`records`) e a seleção
+  (`getSelectionInfo`) — é isso que o exemplo mostra. Somar `dataUnit.records` para exibir um
+  "valor total" seria mentira: são só os registros da página.
+
+O rodapé acompanha o `DataUnit` por `subscribe`, que dispara em **toda** ação despachada.
+Compare o resultado antes de trocar o estado do React: os wrappers React do Stencil não têm
+`shouldComponentUpdate`, então cada render refaz o `attachProps` e troca listeners à toa.
 
 ### CSS próprio
 
@@ -222,6 +288,14 @@ Três coisas que economizam tempo antes de brigar com o layout:
   estilizando componente a componente. Os `snk-*`/`ez-*` são Stencil *scoped* (light DOM,
   alcançável por CSS global), mas alguns — `ez-chip` confirmado — usam shadow DOM real, onde
   só o remapeamento de token funciona.
+- **Confira o nome do token antes de confiar nele.** `var(--nao-existe, #fallback)` não
+  avisa nada: a regra parece seguir o tema e na prática usa o fallback fixo para sempre.
+  Um `grep` no `ez-themed.css` custa segundos e evita um "por que isso não muda no tema
+  escuro?" meses depois.
+- **Sobrescrever regra de componente exige vencer a folha do Stencil**, que é injetada no
+  `<head>` *depois* do CSS base da página e tem duas classes de especificidade (a sua mais a
+  de escopo). Empatar perde pela ordem: use uma classe a mais, o elemento no seletor, ou
+  `!important`. O mesmo vale para as utilitárias do tema, que entram depois do CSS base.
 
 Vale ler o CSS do componente antes de brigar com ele:
 `node_modules/@sankhyalabs/sankhyablocks/dist/collection/components/<nome>/<nome>.css`.

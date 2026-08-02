@@ -54,6 +54,24 @@
 
     <!-- Estilizacao base -->
         <style>
+            /* **                                                                             */
+            /* ** AS DUAS MEDIDAS DA TELA                                                     */
+            /* **                                                                             */
+            /* ** Declaradas aqui porque varias regras abaixo dependem delas, e mais de uma    */
+            /* ** precisa da altura util (viewport menos a moldura) dentro de um calc — as     */
+            /* ** folhas da lib usam 100vh cru e nao sabem que existe moldura.                 */
+            /* **                                                                             */
+            /* ** Valores literais, e nao var(--space--large) / var(--space--medium): o tema   */
+            /* ** ez-design so e embutido no build, entao o editor marcaria o token como nao   */
+            /* ** resolvido aqui. Os valores batem com os do tema (24px e 12px).               */
+            /* **                                                                             */
+            :root {
+                --bi--moldura:       24px;   /* padding do #root: a moldura unica da tela */
+                --bi--respiro-grade: 12px;   /* gutter interno da grade e do rodape       */
+
+                --bi--altura-util:   calc(100vh - (var(--bi--moldura) * 2));
+            }
+
             html, body {
                 height: 100%;
                 margin: 0;
@@ -66,10 +84,7 @@
                 display: flex;
                 flex-direction: column;
 
-                /* Valor literal, e nao var(--space--large): o tema ez-design so e embutido  */
-                /* no build, entao o editor marcaria o token como nao resolvido aqui. O tema */
-                /* define --space--large como 24px, logo o resultado e o mesmo.              */
-                padding: 24px;
+                padding: var(--bi--moldura);
                 box-sizing: border-box;
             }
 
@@ -77,13 +92,21 @@
             /* ** CADEIA DE ALTURA                                                            */
             /* **                                                                             */
             /* ** snk-application e snk-crud declaram :host { display:flex; height:100% },    */
-            /* ** mas o snk-data-unit NAO tem CSS proprio — vira display:inline e quebra a    */
-            /* ** cadeia no meio: o height:100% do snk-crud passa a resolver contra uma caixa */
-            /* ** de altura automatica e a grade encolhe para o conteudo, deixando o resto do */
-            /* ** painel vazio.                                                               */
+            /* ** mas o snk-data-unit NAO tem CSS proprio e o :host do snk-grid.css so define */
+            /* ** variaveis (--snk-grid-min-height, --snk-grid-padding) — nenhum display nem  */
+            /* ** altura. Os dois viram display:inline e quebram a cadeia no meio: o          */
+            /* ** height:100% do .snk-grid__container passa a resolver contra uma caixa de    */
+            /* ** altura automatica, a grade encolhe para o conteudo e o resto do painel fica */
+            /* ** vazio.                                                                      */
+            /* **                                                                             */
+            /* ** O snk-grid esta na lista porque a tela chegou a monta-lo direto sob o       */
+            /* ** snk-data-unit, sem snk-crud. Com o snk-crud de volta a regra e inofensiva — */
+            /* ** o stack-item que o envolve ja e flex-column de altura cheia — e continua    */
+            /* ** valendo se a composicao mudar de novo.                                      */
             /* **                                                                             */
             snk-application,
-            snk-data-unit {
+            snk-data-unit,
+            snk-grid {
                 display: flex;
                 flex-direction: column;
                 flex: 1 1 auto;
@@ -114,8 +137,228 @@
             /* ** barra voltar: com ela o header ja passa desse minimo por conta propria.      */
             /* **                                                                             */
             .snk-grid__header {
-                /* 37px da linha de chips + 12px (--space--medium) da margem do divisor. */
-                min-height: 49px;
+                /* 37px da linha de chips + o respiro da grade na margem do divisor. */
+                min-height: calc(37px + var(--bi--respiro-grade));
+            }
+
+            /* **                                                                             */
+            /* ** MODO FORMULARIO: O SNK-GUIDES-VIEWER PRESSUPOE UM CONTAINER DE SCROLL       */
+            /* **                                                                             */
+            /* ** Tres decisoes da folha dele so fecham dentro de algo que rola:              */
+            /* **                                                                             */
+            /* **   .snk-guides-viewer__header          position: sticky; top: 0              */
+            /* **   .snk-guides-viewer__guide-navigator position: sticky; top: 76px           */
+            /* **   .snk-guides-viewer__container       height: 100%   (sem descontar o       */
+            /* **                                       cabecalho que vem acima dele)         */
+            /* **                                                                             */
+            /* ** Nesta tela nada rola — html, body e #root sao overflow:hidden, porque a      */
+            /* ** grade cuida da propria rolagem. Sem scrollport, medido na tela no modo       */
+            /* ** formulario:                                                                  */
+            /* **                                                                              */
+            /* **   cabecalho  top 24   bottom 92                                              */
+            /* **   container  top 76   bottom 1346    (viewport 1318)                         */
+            /* **                                                                              */
+            /* ** ou seja, o conteudo comeca 16px ACIMA do fim do cabecalho — passa por baixo  */
+            /* ** dele — e ainda transborda 52px alem da caixa util. Os dois sticky ficam      */
+            /* ** inertes, na posicao estatica.                                                */
+            /* **                                                                              */
+            /* ** Delimitar a altura do proprio snk-guides-viewer e dar overflow a ele resolve */
+            /* ** os tres de uma vez: vira o scrollport que a lib procura, o cabecalho gruda   */
+            /* ** no topo dele, o navegador gruda nos 76px, e o que exceder rola em vez de ser */
+            /* ** cortado. E o comportamento da tela nativa.                                   */
+            /* **                                                                              */
+            /* ** Escopo minimo de proposito: mexer no ez-view-stack quebraria o mecanismo de  */
+            /* ** troca de views do snk-crud, que alterna visibility/display entre stack-items.*/
+            /* **                                                                              */
+            snk-guides-viewer {
+                display: block;
+
+                max-height: var(--bi--altura-util);
+                overflow-y: auto;
+            }
+
+            /* **                                                                             */
+            /* ** MODO FORMULARIO: O PAINEL DE GUIAS SE MEDE PELA VIEWPORT, NAO PELA CAIXA    */
+            /* **                                                                             */
+            /* ** O snk-guides-viewer.css dimensiona o navegador de guias assim:              */
+            /* **                                                                             */
+            /* **   .snk-guides-viewer__guide-navigator {                                     */
+            /* **     position: sticky;                                                        */
+            /* **     height: calc(100vh - <header 68px> - <large 24px> - <small 8px>);        */
+            /* **   }                                                                          */
+            /* **                                                                             */
+            /* ** O 100vh e a viewport INTEIRA. Numa tela nativa isso fecha, porque o conteudo */
+            /* ** ocupa a janela toda. Aqui nao: tudo vive dentro do #root, que tem a moldura  */
+            /* ** em cima e embaixo. Sobra --bi--altura-util, e o painel se acha uma moldura   */
+            /* ** inteira maior do que a caixa — a lista de guias termina cortada, sem alcance */
+            /* ** para os ultimos itens.                                                      */
+            /* **                                                                             */
+            /* ** Refazer o calculo sobre --bi--altura-util preserva a intencao do original em */
+            /* ** vez de trocar por altura fixa, e acompanha sozinho se a moldura mudar.       */
+            /* **                                                                             */
+            /* ** O seletor precisa da tag junto das duas classes: o Stencil injeta a folha do */
+            /* ** componente no <head> DEPOIS deste bloco, entao empatar em especificidade     */
+            /* ** perde. Com ez-guide-navigator no meio ganhamos por um elemento.              */
+            /* **                                                                             */
+            .snk-guides-viewer__container > ez-guide-navigator.snk-guides-viewer__guide-navigator {
+                height: calc(var(--bi--altura-util)
+                             - var(--snk-guides-viewer__header--min-height, 68px)
+                             - var(--snk-guides-viewer--space-large, 24px)
+                             - var(--snk-guides-viewer--space-small, 8px));
+            }
+
+            /* **                                                                             */
+            /* ** RODAPE DE TOTAIS DA GRADE                                                   */
+            /* **                                                                             */
+            /* ** O snk-grid renderiza um <slot name="SnkGridFooter"> depois da ez-grid, e o  */
+            /* ** snk-crud o repassa (snk-crud.js:363) — e por ele que o src/Rodape.tsx entra. */
+            /* **                                                                             */
+            /* ** A lib NAO estiliza esse conteudo: na tela nativa de Movimentacao Financeira  */
+            /* ** as classes .footer-totals e .total-indicator__icon vem da propria labsApp    */
+            /* ** dela, nao do ezui nem do sankhyablocks.                                     */
+            /* **                                                                             */
+            /* ** O layout do rodape NAO esta aqui: linha, alinhamento e espacamento sao       */
+            /* ** utilitarias do tema (ez-row, ez-align--middle, ez-padding-*), aplicadas no   */
+            /* ** src/Rodape.tsx — as mesmas que os cartoes ja usavam. Sobra so o circulo do   */
+            /* ** icone, que nao tem equivalente no tema.                                     */
+            /* **                                                                             */
+            /* ** As cores saem de tokens que EXISTEM no ez-themed.css: --color--success (:53) */
+            /* ** e --color--success-200 (:54), --color--error (:55) e --color--error-200      */
+            /* ** (:56). O par -200 e o fundo tonalizado que o proprio design system usa nesse */
+            /* ** papel (ez-themed.css:1363, no ez-badge). Os fallbacks repetem os valores     */
+            /* ** reais desses tokens, nao aproximacoes.                                      */
+            /* **                                                                             */
+            .total-indicator__icon {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 32px;
+                height: 32px;
+                flex: 0 0 auto;
+                border-radius: 50%;
+                background-color: var(--background--medium, rgba(127, 127, 127, .12));
+                color: var(--text--primary);
+            }
+
+            .total-indicator__icon--positivo {
+                background-color: var(--color--success-200, #EBFFFA);
+                color: var(--color--success, #00cb94);
+            }
+
+            .total-indicator__icon--negativo {
+                background-color: var(--color--error-200, #F7E0E5);
+                color: var(--color--error, #DA4453);
+            }
+
+            /* O ez-icon herda a cor por esta variavel, nao por `color`. */
+            .total-indicator__icon ez-icon {
+                --ez-icon--color: currentColor;
+            }
+
+            /* **                                                                             */
+            /* ** ez-margin-bottom--small: 12px NO LUGAR DOS 6px DO TEMA                      */
+            /* **                                                                             */
+            /* ** O tema define 6px (ez-themed.css:639-640, var --space--small). Aqui a folga  */
+            /* ** de 6px e apertada demais entre os cartoes do rodape.                        */
+            /* **                                                                             */
+            /* ** Global, e nao escopado, porque o raio de alcance foi conferido e e pequeno:  */
+            /* ** so dois componentes das libs usam essa utilitaria — o editor de filtro       */
+            /* ** personalizado e o snk-layout-form-config —, os dois em telas de configuracao */
+            /* ** onde 6px a mais de respiro nao muda nada. Se algum dia isso incomodar, o     */
+            /* ** conserto e prefixar com .footer-totals.                                     */
+            /* **                                                                             */
+            /* ** O !important e necessario: o marcador do tema fica DEPOIS deste bloco (o     */
+            /* ** <style> vai ate a linha ~457 e o BI_STYLE entra em seguida), e a utilitaria  */
+            /* ** do tema tem uma classe so — empatar em especificidade perde pela ordem.      */
+            /* ** Mesma razao das regras de padding logo abaixo, que resolvem o empate com     */
+            /* ** duas classes; aqui nao ha segunda classe para usar.                          */
+            /* **                                                                             */
+            .ez-margin-bottom--small {
+                margin-bottom: var(--bi--respiro-grade) !important;
+            }
+
+            /* **                                                                             */
+            /* ** BARRA DE FILTROS: SEM MARGEM SUPERIOR                                       */
+            /* **                                                                             */
+            /* ** Duas margens desalinham os itens da barra em relacao ao resto do cabecalho:  */
+            /* **                                                                             */
+            /* **   .snk-filter-bar__filter-item-container  margin: 2px 0   snk-filter-bar.css:106 */
+            /* **   .ez-margin-top--extra-small             no botao "+ Filtros"                   */
+            /* **                                          snk-filter-bar.js:540                   */
+            /* **                                                                             */
+            /* ** So a de cima sai; a de baixo do container fica, porque e ela que separa os   */
+            /* ** chips da grade.                                                             */
+            /* **                                                                             */
+            /* ** O escopo em snk-filter-bar nao e enfeite: .ez-margin-top--extra-small e uma  */
+            /* ** utilitaria generica do tema, usada tambem no snk-guides-viewer.js:548 — sem  */
+            /* ** o descendente, zerar aqui mexeria no modo formulario tambem.                 */
+            /* **                                                                             */
+            /* ** !important pelo mesmo motivo da regra do modal abaixo: as folhas escopadas   */
+            /* ** do Stencil entram no <head> depois deste bloco.                              */
+            /* **                                                                             */
+            snk-filter-bar .snk-filter-bar__filter-item-container,
+            snk-filter-bar .ez-margin-top--extra-small {
+                margin-top: 0 !important;
+            }
+
+            /* **                                                                             */
+            /* ** MODAL "+ FILTROS": LARGURA MINIMA MENOR QUE A DA LIB                        */
+            /* **                                                                             */
+            /* ** O snk-filter-modal.css:5-8 declara min-width: 344px. Nesta tela isso sobra e */
+            /* ** o modal fica desproporcional, entao baixamos para 295px.                    */
+            /* **                                                                             */
+            /* ** O !important e necessario, nao preguica: a regra da lib e escopada pelo      */
+            /* ** Stencil (.snk-filter-modal__container.sc-snk-filter-modal, duas classes) e a */
+            /* ** folha dela e injetada no <head> DEPOIS deste bloco. Uma regra de uma classe  */
+            /* ** so perde por especificidade, e empatar perde pela ordem. A alternativa seria */
+            /* ** repetir a classe de escopo no seletor, o que amarraria esta regra a um       */
+            /* ** detalhe interno do build do Stencil.                                        */
+            /* **                                                                             */
+            .snk-filter-modal__container {
+                min-width: 295px !important;
+                overflow: hidden;
+            }
+
+            /* **                                                                             */
+            /* ** EDITOR DE FILTRO PERSONALIZADO: ALTURA POR FLEX, NAO POR PORCENTAGEM        */
+            /* **                                                                             */
+            /* ** O overlay em si esta correto e foi medido na tela: position:fixed, top 0,   */
+            /* ** altura igual a viewport, padding de 24px, sem containing block interferindo */
+            /* ** (.filter-bar__personalized-filter, snk-filter-bar.css:40-54). O que estoura */
+            /* ** e o miolo — o snk-personalized-filter.css dimensiona por porcentagem do PAI */
+            /* ** INTEIRO:                                                                    */
+            /* **                                                                             */
+            /* **     .snk-personalized-filter { height: 100% }   (via variavel)              */
+            /* **     .ez-box__main            { height: 90%  }                               */
+            /* **                                                                             */
+            /* ** sem descontar o cabecalho (snk-simple-bar), que fica ACIMA da caixa dentro  */
+            /* ** do mesmo container. Cabecalho + 90% passa de 100%: a caixa do formulario    */
+            /* ** avanca por cima do padding de baixo e encosta na borda da tela, e o excesso */
+            /* ** ainda rola o conteudo, tirando o cabecalho do campo de visao.               */
+            /* **                                                                             */
+            /* ** Que essa folha nao e revisada da para ver duas linhas acima: `height` le a  */
+            /* ** variavel --width e `width` le a --height. Como as duas valem 100%, nunca    */
+            /* ** incomodou ninguem.                                                          */
+            /* **                                                                             */
+            /* ** A correcao e a mesma da cadeia de altura la em cima: porcentagem sai, flex  */
+            /* ** entra, com min-height:0 para o item poder encolher — e a caixa ganha o      */
+            /* ** proprio scroll, que e o comportamento certo quando o filtro tem muitas      */
+            /* ** linhas de expressao.                                                        */
+            /* **                                                                             */
+            /* ** Os seletores ficam presos ao .filter-bar__personalized-filter de proposito: */
+            /* ** .ez-box__main e classe generica do tema e nao pode ser afetada fora daqui.  */
+            /* **                                                                             */
+            snk-personalized-filter.filter-bar__personalized-filter > .snk-personalized-filter {
+                display: flex;
+                flex-direction: column;
+                min-height: 0;
+            }
+
+            snk-personalized-filter.filter-bar__personalized-filter .ez-box__main {
+                height: auto;
+                flex: 1 1 auto;
+                min-height: 0;
+                overflow: auto;
             }
 
             /* **                                                                             */
@@ -151,10 +394,10 @@
             /* **                                                                             */
             .ag-root-wrapper {
                 /* Sem topo: quem separa do cabecalho e o proprio header da grade. */
-                padding: 0 12px 12px !important;
+                padding: 0 var(--bi--respiro-grade) var(--bi--respiro-grade) !important;
 
                 /* O .ag-layout-normal e height: 100%, e o AG Grid nao aplica border-box aqui: */
-                /* sem isto os 12px de baixo seriam somados e estourariam a caixa.             */
+                /* sem isto o respiro de baixo seria somado e estouraria a caixa.              */
                 box-sizing: border-box;
             }
 
@@ -313,18 +556,96 @@
             /* ** */
 
             /* **                                                                                 */
-            /* ** UMA REPETICAO DO LOTE GRAPHQL EM ERRO 5xx                                       */
+            /* ** ABERTURA DA SESSAO DENTRO DO MODULO DO BFF (obrigatorio)                        */
+            /* **                                                                                 */
+            /* ** Passar ?mgeSession=<sessao> no /graphql NAO basta. O mgefin-bff e um modulo      */
+            /* ** separado, com contexto de sessao proprio, e o mgeSession do MGE precisa ser      */
+            /* ** registrado LA DENTRO antes de qualquer query. Quem faz esse registro e o         */
+            /* ** servlet de entrada do modulo:                                                    */
+            /* **                                                                                  */
+            /* **     GET /<MGE_MODULE_NAME>/<APPLICATION_NAME>.xhtml5?mgeSession=...              */
+            /* **                                                                                  */
+            /* ** Sem passar por ele, a instrumentacao de query do BFF                             */
+            /* ** (QueryLogginInstrumentation -> JDBCSpyService.getMgeSession) nao encontra a      */
+            /* ** sessao e lanca IllegalStateException("Sessao MGE nao iniciada"), que sobe sem    */
+            /* ** tratamento ate o servlet e derruba o lote inteiro com um 500 de corpo vazio.     */
+            /* **                                                                                  */
+            /* ** Uma tela nativa nunca sofre disso porque o shell abre a tela justamente por      */
+            /* ** esse .xhtml5. A nossa entra pelo /mge/html5component.mge e, antes disto, so      */
+            /* ** falava com /<modulo>/graphql — nunca com a porta de entrada do modulo.           */
+            /* **                                                                                  */
+            /* ** Diagnostico medido em HAR (arquivos na raiz do projeto): a sessao que tinha      */
+            /* ** passado por um .xhtml5 do modulo respondia 200; uma sessao nova, que nunca       */
+            /* ** passou, respondia 500 indefinidamente, por mais que se recarregasse a tela.      */
+            /* ** Abrir a Movimentacao Financeira nativa "consertava" a tela porque era ela que    */
+            /* ** fazia esse GET. Nao era corrida de tempo: era passo faltando.                    */
+            /* **                                                                                  */
+            /* ** O resultado e uma Promise que o wrapper de fetch abaixo espera antes de soltar   */
+            /* ** qualquer /graphql — e so isso garante a ordem, ja que o lote parte de dentro do  */
+            /* ** bundle, quando o snk-application monta, e nao daqui.                             */
+            /* **                                                                                  */
+            /* ** Nunca rejeita e nunca prende a tela: falha de rede so gera aviso, e um limite de */
+            /* ** tempo destrava a espera. Se mesmo assim a sessao nao abrir, o lote sai como      */
+            /* ** saia antes e as repeticoes/overlay abaixo continuam valendo como rede de         */
+            /* ** seguranca.                                                                       */
+            /* **                                                                                  */
+                const sessaoNoModulo = (function () {
+
+                    const LIMITE_MS = 8000;
+
+                    if (!window.mgeSession) return Promise.resolve ();
+
+                    /* O resourceID so existe na URL do iframe em tela cheia que o removerFrame   */
+                    /* monta. Na primeira carga (dentro da moldura do gadget) ele nao vem — e     */
+                    /* tudo bem: aquela carga e descartada, e a abertura da sessao independe dele. */
+                    const recurso = new URLSearchParams (window.location.search).get ('resourceID');
+
+                    let url = '/' + MGE_MODULE_NAME + '/' + APPLICATION_NAME + '.xhtml5'
+                        + '?mgeSession=' + encodeURIComponent (window.mgeSession);
+
+                    if (recurso) url += '&resourceID=' + encodeURIComponent (recurso);
+
+                    /* fetch nativo: este bloco roda antes de o wrapper abaixo ser instalado. */
+                    const abertura = fetch (url, { credentials: 'include' })
+                        .then (function (resposta) {
+                            if (!resposta.ok) {
+                                console.warn (
+                                    '[bi] entrada do modulo respondeu ' + resposta.status
+                                    + ' — o lote GraphQL pode falhar com 500.'
+                                );
+                            }
+                        })
+                        .catch (function (erro) {
+                            console.warn ('[bi] nao foi possivel abrir a sessao no modulo:', erro);
+                        });
+
+                    const limite = new Promise (function (resolver) {
+                        setTimeout (resolver, LIMITE_MS);
+                    });
+
+                    return Promise.race ([abertura, limite]);
+
+                }) ();
+            /* ** */
+
+            /* **                                                                                 */
+            /* ** ATE 2 REPETICOES DO LOTE GRAPHQL EM ERRO 5xx, COM ESPERA CRESCENTE               */
             /* **                                                                                 */
             /* ** O snk-application abre a tela com um lote de ~8 queries num unico POST           */
             /* ** (graphql-request/batchRequests). Se esse POST falha, falha inteiro: metadados,  */
             /* ** permissoes e configuracoes de grade e formulario somem de uma vez e a tela nao  */
             /* ** monta. Nao ha ponto unico de falha maior nesta pagina.                          */
             /* **                                                                                 */
-            /* ** Ja foi visto um 500 de corpo vazio nesse lote, intermitente: o mesmo payload,   */
-            /* ** com as mesmas variaveis e a mesma sessao, reenviado do console, responde 200 —  */
-            /* ** as oito queries, uma a uma e em lote. Ou seja, a causa esta do lado do servidor */
-            /* ** e nao no que mandamos; daqui so da para nao deixar a tela morrer por causa      */
-            /* ** dela.                                                                           */
+            /* ** O 500 de corpo vazio que se via aqui vinha da sessao nao aberta no modulo,      */
+            /* ** tratada no bloco acima — nao de erro transitorio. Ele parecia intermitente por  */
+            /* ** um motivo enganoso: quem reenviava o mesmo payload do console ja tinha aberto   */
+            /* ** uma tela nativa do modulo no meio do caminho, entao a sessao ja estava aberta e */
+            /* ** a repeticao respondia 200. Numa sessao que nunca passou pelo .xhtml5, o 500 e   */
+            /* ** permanente e nenhuma quantidade de repeticao resolve.                           */
+            /* **                                                                                 */
+            /* ** Estas repeticoes ficam so como rede de seguranca para 5xx genuinamente          */
+            /* ** passageiro. Sao duas, curtas: insistir mais so atrasava o overlay quando a      */
+            /* ** falha era permanente.                                                           */
             /* **                                                                                 */
             /* ** Condicoes para repetir, todas necessarias:                                      */
             /* **                                                                                 */
@@ -339,17 +660,20 @@
             /* ** (browser-ponyfill.js, `var ctx = __global__.fetch ? ...`). Trocar o global mais */
             /* ** tarde, de dentro do React, nao alcanca mais nada.                               */
             /* **                                                                                 */
-            /* ** Se a repeticao TAMBEM vier >= 500, desistimos de tentar sozinhos e mostramos o  */
-            /* ** overlay de #bi-erro-carregamento (marcacao e CSS no <head>/<body> deste mesmo   */
-            /* ** arquivo) com um botao "Recarregar". Ele faz window.location.reload() — que      */
-            /* ** recarrega so este documento (o iframe em tela cheia que o removerFrame monta),  */
-            /* ** nunca a janela do shell do Sankhya, entao as outras abas/telas abertas na mesma  */
-            /* ** sessao do usuario nao sao afetadas.                                             */
+            /* ** Se todas as repeticoes TAMBEM vierem >= 500, desistimos de tentar sozinhos e    */
+            /* ** mostramos o overlay de #bi-erro-carregamento (marcacao e CSS no <head>/<body>   */
+            /* ** deste mesmo arquivo) com um botao "Recarregar". Ele faz window.location.reload()*/
+            /* ** — que recarrega so este documento (o iframe em tela cheia que o removerFrame    */
+            /* ** monta), nunca a janela do shell do Sankhya, entao as outras abas/telas abertas   */
+            /* ** na mesma sessao do usuario nao sao afetadas.                                    */
             /* **                                                                                 */
                 (function () {
 
                     const fetchOriginal = window.fetch.bind (window);
-                    const ESPERA_MS     = 400;
+
+                    /* Cada valor e o tempo de espera ANTES daquela tentativa; o comprimento do   */
+                    /* array e o numero de repeticoes (2, aqui).                                   */
+                    const ESPERAS_MS = [500, 1500];
 
                     const esperar = function (ms) {
                         return new Promise (function (resolver) { setTimeout (resolver, ms); });
@@ -365,6 +689,39 @@
 
                     };
 
+                    /* Tenta de novo a partir do indice `tentativa` de ESPERAS_MS. Recursiva em    */
+                    /* vez de um loop com await porque cada passo precisa do resultado da Promise  */
+                    /* anterior antes de decidir se ha mais uma espera pela frente.                */
+                    const repetir = function (recurso, opcoes, tentativa) {
+
+                        return esperar (ESPERAS_MS [tentativa]).then (function () {
+                            return fetchOriginal (recurso, opcoes);
+                        }).then (function (resposta) {
+
+                            if (resposta.status < 500) return resposta;
+
+                            const proxima = tentativa + 1;
+
+                            if (proxima < ESPERAS_MS.length) {
+                                console.warn (
+                                    '[bi] repeticao ' + (tentativa + 1) + ' tambem respondeu '
+                                    + resposta.status + ' — tentando de novo em '
+                                    + ESPERAS_MS [proxima] + 'ms.'
+                                );
+                                return repetir (recurso, opcoes, proxima);
+                            }
+
+                            console.error (
+                                '[bi] todas as ' + ESPERAS_MS.length
+                                + ' repeticoes responderam >= 500 — desistindo.'
+                            );
+                            mostrarErroCarregamento ();
+                            return resposta;
+
+                        });
+
+                    };
+
                     window.fetch = function (recurso, opcoes) {
 
                         const url = typeof recurso === 'string'
@@ -372,7 +729,12 @@
 
                         if (url.indexOf ('/graphql') === -1) return fetchOriginal (recurso, opcoes);
 
-                        return fetchOriginal (recurso, opcoes).then (function (resposta) {
+                        /* Segura TODA query ate a sessao estar aberta no modulo. E aqui que a    */
+                        /* ordem se garante: o lote parte de dentro do bundle, quando o           */
+                        /* snk-application monta, entao nao ha como sequencia-lo la de fora.      */
+                        return sessaoNoModulo.then (function () {
+                            return fetchOriginal (recurso, opcoes);
+                        }).then (function (resposta) {
 
                             const corpo = opcoes && opcoes.body;
 
@@ -384,24 +746,10 @@
 
                             console.warn (
                                 '[bi] GraphQL respondeu ' + resposta.status
-                                + ' — repetindo o lote uma vez em ' + ESPERA_MS + 'ms.'
+                                + ' — repetindo o lote em ' + ESPERAS_MS [0] + 'ms.'
                             );
 
-                            return esperar (ESPERA_MS).then (function () {
-                                return fetchOriginal (recurso, opcoes);
-                            }).then (function (respostaRepetida) {
-
-                                if (respostaRepetida.status >= 500) {
-                                    console.error (
-                                        '[bi] repeticao tambem respondeu '
-                                        + respostaRepetida.status + ' — desistindo.'
-                                    );
-                                    mostrarErroCarregamento ();
-                                }
-
-                                return respostaRepetida;
-
-                            });
+                            return repetir (recurso, opcoes, 0);
 
                         }).catch (function (erro) {
 

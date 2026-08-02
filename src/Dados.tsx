@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { DataUnit } from "@sankhyalabs/core";
-import { SnkApplication, SnkDataUnit, SnkCrud, SnkFilterBar } from "@sankhyalabs/sankhyablocks/react/components";
+import { SnkApplication, SnkDataUnit, SnkCrud } from "@sankhyalabs/sankhyablocks/react/components";
 import { gerenciadorBarraTarefas, aoClicarNaBarra } from './BarraTarefas';
-import { filtrosPadrao } from './Filtros';
+import Rodape, { TotalDoRodape } from './Rodape';
 
 /*
  * RESOURCEID DA TELA — preencha, senao a tela abre somente leitura.
@@ -59,47 +59,147 @@ const entidade = "Parceiro";
 /*
  * Tela de dados: grade + barra de filtros + formulario da entidade.
  *
- * O aninhamento e obrigatorio — o SnkCrud exige SnkApplication (config, permissoes,
- * mensagens) e SnkDataUnit (metadados e estado da entidade) como pais. O SnkFilterBar
- * entra como outro filho direto do SnkDataUnit.
+ * O aninhamento e o do exemplo oficial do snk-crud, sem nada em volta: SnkApplication (config,
+ * permissoes, mensagens) e SnkDataUnit (metadados e estado da entidade) sao os dois pais
+ * obrigatorios.
  *
- * SnkFilterBar so monta depois do `onDataUnitReady` e recebe o `dataUnit` explicito por
- * prop, em vez de deixa-lo subir o `parentElement` sozinho procurando por um
- * <snk-data-unit> (o que a lib faz quando a prop nao e informada): esse auto-discovery
- * roda dentro do componentWillLoad do SnkFilterBar e, se o <snk-data-unit> pai ainda nao
- * tiver o proprio dataUnit pronto naquele instante, ele so registra um listener de
- * "dataUnitReady" e segue em frente sem esperar — daí o componentWillLoad chama
- * loadConfigFromStorage com `this.dataUnit` ainda undefined, e a lib tenta ler
- * `this.dataUnit.name` (snk-filter-bar.js:384/387), estourando "TypeError: Cannot read
- * properties of undefined (reading 'name')" e sendo relancado como "Falha ao buscar
- * configuração de filtros". Gatear no evento (como o exemplo oficial recomenda para o
- * SnkCrud) fecha essa corrida.
+ * OS FILTROS VEM DO ERP, NAO DAQUI — e isso e a plataforma, nao uma limitacao nossa.
+ * `filterCustomConfig` e `filterCustomConfigInterceptor` nem constam na referencia do snk-crud:
+ * sao @Prop do snk-grid (snk-grid.js:1264,1293), que o snk-crud monta por dentro e nao repassa
+ * (snk-crud.js:363 leva filterBarTitle, autoLoad, disablePersonalizedFilter e
+ * filterBarLegacyConfigName — nao essas). A barra e alimentada pelo que estiver cadastrado no
+ * resourceID e pelos filtros personalizados que o usuario criar, que o servidor devolve como
+ * groupedItems do PERSONALIZED_FILTER_GROUP.
+ *
+ * Se um dia for preciso trazer filtros ja cadastrados noutro recurso, o caminho documentado e a
+ * prop `filterBarLegacyConfigName`, que injeta um legacyResourceID na busca da config
+ * (ConfigStorage.js:35) — declarativo, sem alcancar elemento nenhum.
+ *
+ * ARMADILHA CONHECIDA: sem NENHUM filtro — nada cadastrado no recurso e nenhum personalizado
+ * criado — o snk-grid conclui que nao ha o que mostrar e tira a barra inteira do DOM
+ * (snk-grid.js:574-576), levando junto o botao "+ Filtros". Numa base virgem o usuario fica sem
+ * por onde criar o primeiro. Se isso aparecer, o problema e esse, nao a tela.
+ *
+ * O que NAO resolve, e ja foi tentado: acrescentar um <SnkFilterBar> ao lado, como o exemplo
+ * oficial mostra para telas SEM grade. Toda barra faz dataUnit.addFilterProvider(this), e a
+ * chave desse Map e o hash do CODIGO do metodo getFilter (DataUnit.js:224-229) — duas
+ * instancias da mesma classe colidem, e a que registra por ultimo apaga a outra. Sobrava a
+ * barra do grid, vazia, e o DataUnit.getFilters() devolvia [].
+ *
+ * O `configName` mantem a config de filtros, grade e formulario no mesmo recurso que o
+ * SnkApplication usa (cfg://filter/FilterBarState:<resourceID>.Parceiro); sem ele o snk-crud
+ * repassa configName undefined e a barra grava noutra chave.
  */
+
+/*
+ * Numeros do rodape, tirados do proprio DataUnit.
+ *
+ * ESTA E A FONTE QUE NAO DEPENDE DE NADA CADASTRADO NO ERP. A tela nativa de Movimentacao
+ * Financeira mostra Receita/Despesa/Saldo, e aqueles valores vem de um recurso
+ * `totals://<nome>/<resourceID>` cadastrado no ERP para AQUELA tela — o snk-application sabe
+ * busca-lo (loadTotals, snk-application.js:691), mas nao expoe o metodo ao elemento, entao do
+ * React so daria para chegar la por caminho interno do pacote, que esta fixado em `latest`.
+ * Para o Parceiro esse recurso tambem nao existe.
+ *
+ * O que o DataUnit entrega de graca, e ja filtrado pelo que estiver na barra:
+ *
+ *   - paginationInfo.total  — total de registros que o filtro atual devolve. Fica undefined
+ *     enquanto a paginacao ainda esta correndo; nesse intervalo o `count` e o que ja veio;
+ *   - records.length        — quantos estao carregados na pagina;
+ *   - getSelectionInfo()    — a selecao, com `length` ciente da selecao virtual "todos".
+ *
+ * O `|| undefined` no getPaginationInfo so descarta o `void` da assinatura da lib
+ * (`PaginationInfo | void`, devolvido enquanto nao houve carga); o tipo continua vindo dela.
+ *
+ * `records` e getter que faz Array.from do Map interno (DataUnit.js:800-803), entao vale numa
+ * variavel — nao e leitura de campo.
+ *
+ * Para somar campos (valor, limite de credito), o caminho e outro: ou cadastrar o
+ * totals:// no ERP, ou consultar o proprio agregado por /mge/service.sbr. Somar
+ * `dataUnit.records` aqui mentiria — sao so os 150 da pagina.
+ */
+const calcularTotais = (dataUnit: DataUnit): Array<TotalDoRodape> => {
+
+    const paginacao    = dataUnit.getPaginationInfo() || undefined;
+    const carregados   = dataUnit.records.length;
+    const selecionados = dataUnit.getSelectionInfo().length;
+
+    return [
+        {
+            rotulo: 'Parceiros',
+            valor:  paginacao?.total ?? paginacao?.count ?? carregados,
+            icone:  'hierarchical-tree',
+        },
+        {
+            rotulo: 'Carregados',
+            valor:  carregados,
+            icone:  'list',
+        },
+        {
+            rotulo: 'Selecionados',
+            valor:  selecionados,
+            icone:  'check',
+            tom:    selecionados > 0 ? 'positivo' : undefined,
+        },
+    ];
+};
+
 const Dados = () => {
-    const [dataUnit, setDataUnit] = useState<DataUnit>();
+
+    const [totais, setTotais] = useState<Array<TotalDoRodape>>([]);
+
+    /*
+     * O rodape acompanha o DataUnit, nao o React: quem muda os numeros e carga, paginacao e
+     * selecao, tudo despachado como acao la dentro.
+     *
+     * O subscribe recebe TODA acao (DataUnit.js:1522-1533), e a maioria nao mexe em nenhum dos
+     * tres numeros — CHANGING_DATA e DATA_CHANGED disparam a cada campo editado no formulario,
+     * LOADING_PROPERTIES_CLEANED sai de nove pontos diferentes da lib. Filtrar por `action.type`
+     * amarraria a tela a nomes internos que mudam de versao; comparar o RESULTADO e igualmente
+     * barato e nao amarra nada. Devolver o array anterior faz o React abortar o render — o que
+     * importa aqui porque os wrappers React do Stencil nao tem shouldComponentUpdate: cada
+     * render refaz attachProps nos tres hosts e troca os listeners de evento.
+     *
+     * Sem unsubscribe de proposito: este componente vive enquanto a tela existir, e o DataUnit
+     * morre junto com ela.
+     *
+     * useCallback com deps vazio porque o corpo so depende de setTotais, que e estavel: sem
+     * isso a identidade nova a cada render faria o wrapper remover e re-registrar o listener de
+     * dataUnitReady no <snk-data-unit>.
+     */
+    const aoTerDataUnit = useCallback((evento: CustomEvent<DataUnit>) => {
+        const dataUnit = evento.detail;
+        if (!dataUnit) {
+            return;
+        }
+
+        const atualizar = () => setTotais(anteriores => {
+            const novos = calcularTotais(dataUnit);
+            const igual = anteriores.length === novos.length
+                && novos.every((total, i) =>
+                    anteriores[i].valor === total.valor && anteriores[i].tom === total.tom);
+            return igual ? anteriores : novos;
+        });
+
+        dataUnit.subscribe(atualizar);
+        atualizar();
+    }, []);
 
     return (
         <SnkApplication configName={entidade}>
             <SnkDataUnit
-                entityName     = {entidade}
-                resourceID     = {RESOURCE_ID || undefined}
-                onDataUnitReady = {(evento) => setDataUnit(evento.detail)}
+                entityName      = {entidade}
+                resourceID      = {RESOURCE_ID || undefined}
+                onDataUnitReady = {aoTerDataUnit}
             >
-                {dataUnit && (
-                    <SnkFilterBar
-                        configName          = {entidade}
-                        resourceID          = {RESOURCE_ID || undefined}
-                        dataUnit            = {dataUnit}
-                        /* O `as any` e so aqui, na fronteira com a prop: a SnkFilterItemConfig da
-                           lib tipa `type`/`filterType` como enum, e filtrosPadrao (Filtros.tsx) usa
-                           string por nao poder importar esses enums — ver o comentario la. */
-                        filterCustomConfig  = {filtrosPadrao as any}
-                    />
-                )}
                 <SnkCrud
+                    configName     = {entidade}
                     taskbarManager = {gerenciadorBarraTarefas}
                     onActionClick  = {aoClicarNaBarra}
-                />
+                >
+                    {/* Vai para o slot SnkGridFooter, que o snk-crud repassa ao snk-grid. */}
+                    <Rodape totais={totais} />
+                </SnkCrud>
             </SnkDataUnit>
         </SnkApplication>
     );
